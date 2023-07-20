@@ -94,7 +94,7 @@ void g_nu(float* g, float* nu, float nn, const int n)
 {
 	float nu_max = 60.0;
 	float A = (pow(13.6, -1.0) - pow(nu_max, -1.0));
-	//float Yp = 0.0;
+	float Yp = 0.0;
 	
 	for(int i=0; i<n; i++)
 	{
@@ -128,14 +128,13 @@ float dtau(float dz, float z, float nu, float nb, float x_hi, float x_hei)
 void Source(	float* s, float ndot, float dz, float z0, float* nu,
 				float nb, float x_hi, float x_hei, float R0, float nn, const int n)
 {
-	// Swapped variables to "double" to stop a precision error that was seizing the code
-	double c		= 3.0e10;
-	double ddz	= dz/64.0;
-	double z1	= z0-dz;
-	double dz1	= 0.0;
-	double t0	= 0.0;
+	float c		= 3.0e10;
+	float ddz	= dz/64.0;
+	float z1	= z0-dz;
+	float dz1	= 0.0;
+	float t0	= 0.0;
 	
-	//double dt0	= (3.15e13*(time(z0-dz)-time(z0)));
+	float dt0	= (3.15e13*(time(z0-dz)-time(z0)));
 	
 	for(int i=0; i<n; i++)
 		s[i] = 0;
@@ -144,9 +143,9 @@ void Source(	float* s, float ndot, float dz, float z0, float* nu,
 	{
 		dz1 = dz1 + ddz;
 		z1 = z1 + ddz;
-		double dt = (3.15e13*(time(z1-ddz)-time(z1)));
+		float dt = (3.15e13*(time(z1-ddz)-time(z1)));
 		t0 = t0 + dt;
-		double fac = (z1+1.0-dz1)/(z1+1.0);
+		float fac = (z1+1.0-dz1)/(z1+1.0);
 		
 		if(c*t0 > 3.086e24*R0/(z1+1.0))
 		{
@@ -159,7 +158,7 @@ void Source(	float* s, float ndot, float dz, float z0, float* nu,
 	
 			for(int i=0; i<n; i++)
 			{
-				double temp;
+				float temp;
 				temp = g[i]*exp(-dtau(dz1, z1, nu_p[i], nb, x_hi, x_hei));
 				//temp = ndot*temp*dt*pow(fac,-3);
 				temp = ndot*temp*c*dt*pow(fac,-3);

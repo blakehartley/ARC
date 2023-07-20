@@ -5,24 +5,23 @@
 #include "./inc/chealpix.cu"
 #include "./inc/rates.cu"
 
-__device__ float energy[FREQ_BIN_NUM] = {16.74, 24.65, 34.49, 52.06};
+//__device__ float energy[FREQ_BIN_NUM] = {16.74, 24.65, 34.49, 52.06};
+//__device__ float energy[FREQ_BIN_NUM] = {13.60, 24.65, 34.49, 52.06};
+//float gfn[FREQ_BIN_NUM] = {1.0, 0.0, 0.0, 0.0};
+//float gfn[FREQ_BIN_NUM] = {	0.5, 0.5, 0.0, 0.0};
+//float gfn[FREQ_BIN_NUM] = {	0.25, 0.25, 0.25, 0.25};
+//float gfn[FREQ_BIN_NUM] = {	0.277, 0.335, 0.2, 0.188};
+//__device__ float gfn[FREQ_BIN_NUM] = {	0.277, 0.335, 0.2, 0.188};
+//__device__ float gfn[FREQ_BIN_NUM] = {	0.465, 0.335, 0.2, 0.0};
 
-__device__ float gfn[FREQ_BIN_NUM] = {	0.277, 
-										0.335, 
-										0.2, 
-										0.188};
+// RAMSES
+//__device__ float energy[FREQ_BIN_NUM] = {1.440E+01, 1.990E+01, 3.508E+01, 3.508E+01};
+__device__ float energy[FREQ_BIN_NUM] = {13.60, 24.60, 35.08, 35.08};
+float gfn[FREQ_BIN_NUM] = {	0.414, 0.586, 0.0, 0.0};
 
-inline __device__ void sigma(float sig[][FREQ_BIN_NUM])
-{
-	sig[0][0] = 3.61240988816e-18;	// 16.74 eV
-	sig[0][1] = 1.23064754251e-18;	// 24.65 eV
-	sig[0][2] = 4.70615962674e-19;	// 34.49 eV
-	sig[0][3] = 1.4045184426e-19;	// 52.06 eV
-	sig[1][0] = 0;	// 16.74 eV
-	sig[1][1] = 7.78171958766e-18;	// 24.65 eV
-	sig[1][2] = 4.20508180238e-18;	// 34.49 eV
-	sig[1][3] = 1.91002975156e-18;	// 52.06 eV
-}
+//__device__ float energy[FREQ_BIN_NUM] = {17.00, 17.00, 17.00, 17.00};
+//float gfn[FREQ_BIN_NUM] = {1.0, 0.0, 0.0, 0.0};
+//__device__ float gfn[FREQ_BIN_NUM] = {1.0, 0.0, 0.0, 0.0};
 
 __device__ float time(float redshift) {
 	float h = 0.6711;
@@ -43,6 +42,64 @@ __device__ float redshift(float time) {
 	float redshift = powf((3.*h0*powf(omegam, 0.5)*time / 2.), -2. / 3.) - 1.;
 	return redshift;
 }
+
+/*inline __device__ void sigma(float sig[][FREQ_BIN_NUM])
+{
+	sig[0][0] = 3.4630495932136023e-18;	// 17.0 eV
+	sig[0][1] = 0.0;	// 10.0 eV
+	sig[0][2] = 0.0;	// 10.0 eV
+	sig[0][3] = 0.0;	// 10.0 eV
+	sig[1][0] = 0.0;	// 17.0 eV
+	sig[1][1] = 0.0;	// 10.0 eV
+	sig[1][2] = 0.0;	// 10.0 eV
+	sig[1][3] = 0.0;	// 10.0 eV
+}*/
+
+/*inline __device__ void sigma(float sig[][FREQ_BIN_NUM])
+{
+	sig[0][0] = 6.2998764713e-18;	// 13.6 eV
+	sig[0][1] = 1.23034961639e-18;	// 24.65 eV
+	sig[0][2] = 4.70442276047e-19;	// 34.49 eV
+	sig[0][3] = 1.40170632038e-19;	// 52.06 eV
+	
+	sig[1][0] = 0;	// 16.74 eV
+	sig[1][1] = 7.77983571966e-18;	// 24.65 eV
+	sig[1][2] = 4.20352986507e-18;	// 34.49 eV
+	sig[1][3] = 1.90620549625e-18;	// 52.06 eV
+	//sig[1][1] = 0;	// 24.65 eV
+	//sig[1][2] = 0;	// 34.49 eV
+}*/
+
+// RAMSES
+inline __device__ void sigma(float sig[][FREQ_BIN_NUM])
+{
+	sig[0][0] = 3.007e-18;	// 13.6 eV
+	sig[0][1] = 5.687e-19;	// 24.65 eV
+	sig[0][2] = 7.889e-20;	// 34.49 eV
+	sig[0][3] = 1.0;	// 52.06 eV
+	
+	sig[1][0] = 0;	// 16.74 eV
+	sig[1][1] = 4.478e-18;	// 24.65 eV
+	sig[1][2] = 1.197e-18;	// 34.49 eV
+	sig[1][3] = 1.0;	// 52.06 eV
+	//sig[1][1] = 0;	// 24.65 eV
+	//sig[1][2] = 0;	// 34.49 eV
+}
+
+/*inline __device__ void sigma(float sig[][FREQ_BIN_NUM])
+{
+	sig[0][0] = 1.23034961639e-18;	// 13.6 eV
+	sig[0][1] = 1.23034961639e-18;	// 24.65 eV
+	sig[0][2] = 4.70442276047e-19;	// 34.49 eV
+	sig[0][3] = 4.70442276047e-19;	// 52.06 eV
+	
+	sig[1][0] = 0;	// 16.74 eV
+	sig[1][1] = 7.77983571966e-18;	// 24.65 eV
+	sig[1][2] = 4.20352986507e-18;	// 34.49 eV
+	sig[1][3] = 1.90620549625e-18;	// 52.06 eV
+	//sig[1][1] = 0;	// 24.65 eV
+	//sig[1][2] = 0;	// 34.49 eV
+}*/
 
 __device__ static float atomicMax(float* address, float val)
 {
@@ -73,22 +130,38 @@ __device__ void step_bdf(float* yout, float* y, float* dGdx, float n, float E, f
 	col[0] = col_HI(T);
 	col[1] = col_HeI(T);
 	
-	for(int nBin=0; nBin < SPECIES; nBin++)
+	for(int nSpe=0; nSpe < SPECIES; nSpe++)
 	{
-		// Find the ionization rate per neutral particle
-		/*float gamDer;
-		if(y[nBin] < 1.e-30)
-			gamDer = 0.0;
-		else
-			gamDer = gam[nBin]/y[nBin];*/
+		// Constant alpha
+		//float source = al[nSpe]*(1.0-y[nSpe])*ne*dt + y[nSpe];
+		//float sink = 1.0 + (dGdx[nSpe] + col[nSpe]*ne)*dt;
+		// Variable alpha
+		float source = al[nSpe]*(1.0-y[nSpe])*ne*dt + y[nSpe];
+		float sink = 1.0 + (dGdx[nSpe] + al[nSpe]*ne + col[nSpe]*ne)*dt;
+		// Basic, no alpha
+		//float source = y[nSpe];
+		//float sink = 1.0 + (dGdx[nSpe])*dt;
 		
-		float source = al[nBin]*(1.0-y[nBin])*ne*dt + y[nBin];
-		float sink = 1.0 + (dGdx[nBin] + col[nBin]*ne)*dt;
+		yout[nSpe] = source/sink;
+		/*yout[nSpe] = y[nSpe];
+		yout[nSpe] += dt*(-gam[nSpe] - col[nSpe]*ne*y[nSpe]);
+		yout[nSpe] += dt*al[nSpe]*(1.0-y[nSpe])*ne;*/
+		//yout[nSpe] = y[nSpe];
+		//yout[nSpe] += dt*(-dGdx[nSpe]*y[nSpe]);
+		//yout[nSpe] += dt*al[nSpe]*(1.0-y[nSpe])*ne;
 		
-		yout[nBin] = source/sink;
-		/*yout[nBin] = y[nBin];
-		yout[nBin] += dt*(-gam[nBin] - col[nBin]*ne*y[nBin]);
-		yout[nBin] += dt*al[nBin]*(1.0-y[nBin])*ne;*/
+		// Quadratic formulation:
+		/*float A = al[nSpe]*n;
+		float B = -dGdx[nSpe] - 2.0*al[nSpe]*n;
+		float C = al[nSpe]*n;
+		
+		float Anew = -A*dt;
+		float Bnew = 1.0-dt*B;
+		float Cnew = -y[nSpe]-C*dt;
+		
+		yout[nSpe] = (-Bnew + sqrt(Bnew*Bnew-4*Anew*Cnew))/(2*Anew);
+		yout[nSpe] = MAX(yout[nSpe],1.0e-10);
+		yout[nSpe] = MIN(yout[nSpe],1.0e0);*/
 	}
 }
 
@@ -163,7 +236,7 @@ __device__ float thin_source(float source, float fraction)
 	}
 }
 
-__global__ void timestep(	float* rate, float* dt, float* density, float* x_N,
+__global__ void timestep(	double* rate, float dt, float* density, float* x_N,
 							float* FluxArray, float* EArray, float* background,
 							int dim, float L, float a)
 {
@@ -205,21 +278,222 @@ __global__ void timestep(	float* rate, float* dt, float* density, float* x_N,
 	float tau = max(dens*sig*dx, 3.0);
 	
 	// dIdt
-	atomicMax(rate+1, dxdt*tau);
+	//atomicMax(rate+1, dxdt*tau);
 	
 	// dnHdt
-	if(tau > 0.5)
-		atomicMax(rate, dxdt/xn[0]);
-	dt[ind] = dxdt/xn[0];
+	//if(tau > 0.5)
+		//atomicMax(rate, dxdt/xn[0]);
+	
+	// dt[ind] = dxdt/xn[0]; // Filter
+
+	// Conservation calculation (rate[2])
+	float fDtMyr = dt*3.15e13;
+	float xn_out[2];
+
+	float xe = (1.0-Y_P)*(1.0-xn[0])+0.25*Y_P*(1.0-xn[1]);
+	float ne = dens*xe;
+	float T  = E/((3./2.)*8.6173303e-5)/(1.0+xe);
+	int CASE = 1;
+	
+	// Recombination rates (Black81)
+	float al[2];
+	al[0] = rec_HII(T, CASE);
+	al[1] = rec_HeII(T, CASE);
+	
+	// Collision Excitation
+	float col[2];
+	col[0] = col_HI(T);
+	col[1] = col_HeI(T);
+	
+	float fRec[2], x_eq, delta_x[2];
+	for(int nSpe=0; nSpe < SPECIES; nSpe++)
+	{
+		fRec[nSpe] = al[nSpe]*(1.0-xn[nSpe])*ne;//*(a*a*a);// volume weighted
+		
+		// Tracking neutral
+		float C = dGdx[nSpe] + col[nSpe]*ne;
+		float D = al[nSpe]*(1.0-xn[nSpe])*ne;
+		
+		//xn_out[nSpe] = (xn[nSpe] + D*fDtMyr)/(1 + C*fDtMyr);
+		
+		// Tracking ionized
+		float x_ion = 1.0 - xn[nSpe];
+		x_ion = (x_ion + (C-D)*fDtMyr)/(1+C*fDtMyr);
+		xn_out[nSpe] = 1.0 - x_ion;
+		
+		//xn_out[nSpe] = xn[nSpe] - dGdx[nSpe]*fDtMyr;
+		//fRec = 0.0;
+		if(xn[nSpe] > -0.05)
+		{
+			xn_out[nSpe] = xn[nSpe] - Gamma[nSpe]*fDtMyr + fRec[nSpe]*fDtMyr;
+		}
+		//xn_out[nSpe] = xn[nSpe] - Gamma[nSpe]*fDtMyr + fRec*fDtMyr;
+
+		xn_out[nSpe] = MAX(xn_out[nSpe], 1.0e-10);
+		xn_out[nSpe] = MIN(xn_out[nSpe], 1.0);
+
+		delta_x[nSpe] = xn[nSpe] - xn_out[nSpe];
+	}
+	
+	//float delta_x = xn[0] - xn_out[0];
+	//fRec = al[0]*(1.0-xn[0])*ne;
+
+	float cell_ratio = 0.0;
+	//cell_ratio = 1 - (delta_x + fRec*fDtMyr)/(Gamma[0]*fDtMyr);
+	atomicAdd(rate+0, double(delta_x[0]*density[ind]));
+	atomicAdd(rate+1, double(Gamma[0]*density[ind]));
+	atomicAdd(rate+2, double(fRec[0]*density[ind]));
+	atomicAdd(rate+3, double(delta_x[1]*density[ind]));
+	atomicAdd(rate+4, double(Gamma[1]*density[ind]));
+	atomicAdd(rate+5, double(fRec[1]*density[ind]));
+
+	//atomicAdd(rate+3, count_out*density[ind]);
 	
 	__syncthreads();
+}
+
+__global__ void ionization(	float dt, float* error, float* density, float* x_N,
+							float* FluxArray, float* EArray, float* dEArray,
+							float* background, int dim, float a)
+{
+	int nelements=dim*dim*dim;
+	
+	int i0 = blockIdx.x*blockDim.x+threadIdx.x;
+	int j0 = blockIdx.y*blockDim.y+threadIdx.y;
+	int k0 = blockIdx.z;
+
+	int index=i0+dim*j0+dim*dim*k0;
+	
+	float fDtMyr = dt*3.15e13;
+	
+//	float t = time(1.0/a - 1.0);
+	
+	float xn[SPECIES];
+	float xn_out[SPECIES];
+	float Gamma[SPECIES];
+	
+	float fCumFlux = 0;
+	
+	for(int nSpe=0; nSpe < SPECIES; nSpe++)
+	{
+		xn[nSpe] = x_N[index+nSpe*nelements];
+		Gamma[nSpe] = FluxArray[index+nSpe*nelements];
+		Gamma[nSpe] += background[nSpe];	// Ionization rate for each species (per Myr)
+		
+		fCumFlux += xn[3+nSpe]*fDtMyr;
+	}
+	
+	float dens = density[index]/(a*a*a);	// Baryonic number density
+	float E = EArray[index];				// Energy (temperature) per baryon
+	float dEdt = dEArray[index];
+	//float dEdt = dEArray[index]+background[2]+background[3];
+	
+	// Subcycle loop to advance the chemistry
+	// First we calculate the optically thin approximation of source terms:
+	float dEdx, dGdx[SPECIES];
+	for(int nSpe=0; nSpe<SPECIES; nSpe++)
+	{
+		dGdx[nSpe] = thin_source(Gamma[nSpe], xn[nSpe]);
+	}
+	dEdx = thin_source(dEdt, xn[0]);
+	
+	E = E + dEdt*dt;
+	
+	//step_bdf(xn_out, xn, dGdx, dens, E, dtSub);
+	//step_bdf(float* yout, float* y, float* dGdx, float n, float E, float dt)
+	float xe = (1.0-Y_P)*(1.0-xn[0])+0.25*Y_P*(1.0-xn[1]);
+	float ne = dens*xe;
+	float T  = E/((3./2.)*8.6173303e-5)/(1.0+xe);
+	int CASE = 1;
+	
+	// Recombination rates (Black81)
+	float al[2];
+	al[0] = rec_HII(T, CASE);
+	al[1] = rec_HeII(T, CASE);
+	
+	// Collision Excitation
+	float col[2];
+	col[0] = col_HI(T);
+	col[1] = col_HeI(T);
+	
+	float fRec, x_eq;
+	for(int nSpe=0; nSpe < SPECIES; nSpe++)
+	{
+		//fRec = al[nSpe]*(1.0-xn[nSpe])*ne;//*(a*a*a);// volume weighted
+		fRec = al[nSpe]*(1.0-xn[nSpe])*ne;//*(a*a*a);// volume weighted
+		//fRec = 0.0;
+		/*float source = al[nSpe]*(1.0-xn[nSpe])*ne*fDtMyr + xn[nSpe];
+		float sink = 1.0 + (dGdx[nSpe] + col[nSpe]*ne)*fDtMyr;
+		xn_out[nSpe] = source/sink;*/
+		
+		// Tracking neutral
+		float C = dGdx[nSpe] + col[nSpe]*ne;
+		float D = al[nSpe]*(1.0-xn[nSpe])*ne;
+		
+		//xn_out[nSpe] = (xn[nSpe] + D*fDtMyr)/(1 + C*fDtMyr);
+		
+		// Tracking ionized
+		float x_ion = 1.0 - xn[nSpe];
+		x_ion = (x_ion + (C-D)*fDtMyr)/(1+C*fDtMyr);
+		xn_out[nSpe] = 1.0 - x_ion;
+		
+		//xn_out[nSpe] = xn[nSpe] - dGdx[nSpe]*fDtMyr;
+		//fRec = 0.0;
+		if(xn[nSpe] > 0.05)
+		{
+			xn_out[nSpe] = xn[nSpe] - Gamma[nSpe]*fDtMyr + fRec*fDtMyr;
+		}
+		//xn_out[nSpe] = xn[nSpe] - Gamma[nSpe]*fDtMyr + fRec*fDtMyr;
+
+		//xn_out[nSpe] = 
+		atomicAdd(error, fRec*density[index]);
+		//atomicAdd(error, 1);
+		
+		//xn_out[nBin] = xn[nBin]/(1+dGdx[nBin]*1*fDtMyr);
+		//yout[nBin] += dt*al[nBin]*(1.0-y[nBin])*ne;
+	}
+	//x_eq = al[0]*(1.0-xn[0])*ne/(Gamma[0]+1.e-3);
+
+	for(int nSpe=0; nSpe<SPECIES; nSpe++)
+	{
+		xn[nSpe] = xn_out[nSpe];
+		xn[nSpe] = MAX(xn[nSpe], 1.0e-10);
+		//xn[nSpe] = MAX(xn[nSpe], x_eq);
+		xn[nSpe] = MIN(xn[nSpe], 1.0);
+	}
+	
+	
+	__syncthreads();
+	for(int nSpe=0; nSpe<SPECIES; nSpe++)
+	{
+		x_N[index+nSpe*nelements] = xn[nSpe];
+	}
+	
+	//float xerr[SPECIES];
+	// Change the energy array
+	if(E <= 0)
+		EArray[index] = 0.0;
+		//EArray[index] = E;
+	else
+		EArray[index] = E;
+	
+	//for(int i=0; i<SPECIES; i++)
+	//{
+	//	xerr[i] = xn_out[i];
+	//}
+	
+//	if(index == 1056832)
+//		*error = xeq;
+//	atomicMax(error, EArray[index]);
+//	atomicAdd(error, al[nBin]*(1.0-y[nBin])*ne*dt);
+//	__syncthreads();
 }
 
 // This is here because derivs is inherently inline under CUDA architecture.
 //#include "./inc/rkck.cu"
 //#include "./inc/simpr.cu"
 
-__global__ void ionization(	float dt, float* error, float* density, float* x_N,
+__global__ void ionization1(	float dt, float* error, float* density, float* x_N,
 							float* FluxArray, float* EArray, float* dEArray,
 							float* background, int dim, float a)
 {
@@ -267,6 +541,21 @@ __global__ void ionization(	float dt, float* error, float* density, float* x_N,
 	}
 	dEdx = thin_source(dEdt, xn[0]);
 	
+	// Recombination addition
+	float xe = (1.0-Y_P)*(1.0-xn[0])+0.25*Y_P*(1.0-xn[1]);
+	float ne = dens*xe;
+	float T  = E/((3./2.)*8.6173303e-5)/(1.0+xe);
+	int CASE = 1;
+	float al[2];
+	al[0] = rec_HII(T, CASE);
+	al[1] = rec_HeII(T, CASE);
+	float fRec;
+	for(int nSpe=0; nSpe<SPECIES; nSpe++)
+	{
+		fRec = al[nSpe]*(1.0-xn[nSpe])*ne;
+		atomicAdd(error, fRec);
+	}
+	
 	// Subcycle:
 	fDtRem = fDtMyr;
 	while(fDtRem > 1.0)	// One second
@@ -301,9 +590,9 @@ __global__ void ionization(	float dt, float* error, float* density, float* x_N,
 		float dtSub = min(dtSubE, dtSubH);
 		
 		// Updating energy
-		/*float E1 = E + dEdt*dtSub;
-		float dEdt1 = dEdx*xn[0] - lambda(E1, xn, dens, a);
-		E = MIN(2.e4*1.29e-4, E + (dEdt+dEdt1)*dtSub/2);*/
+		//float E1 = E + dEdt*dtSub;
+		//float dEdt1 = dEdx*xn[0] - lambda(E1, xn, dens, a);
+		//E = MIN(2.e4*1.29e-4, E + (dEdt+dEdt1)*dtSub/2);
 		E = E + dEdt*dtSub;
 		
 		step_bdf(xn_out, xn, dGdx, dens, E, dtSub);		
@@ -340,15 +629,15 @@ __global__ void ionization(	float dt, float* error, float* density, float* x_N,
 	else
 		EArray[index] = E;
 	
-	/*for(int i=0; i<SPECIES; i++)
-	{
-		xerr[i] = xn_out[i];
-	}*/
+	//for(int i=0; i<SPECIES; i++)
+	//{
+	//	xerr[i] = xn_out[i];
+	//}
 	
 //	if(index == 1056832)
 //		*error = xeq;
 //	atomicMax(error, EArray[index]);
-	atomicAdd(error, fCumFlux);
+	//atomicAdd(error, fCumFlux);
 //	__syncthreads();
 }
 
@@ -448,6 +737,7 @@ __device__ void round_down(int * I, float * X)
 	I[2] = __double2int_rd(X[2]);
 }
 
+// Returns 1 if the ray is outside the domain
 __device__ int BoundaryCheck(float * X, int * I, int DIM)
 {
 	for(int i=0; i<3; i++)
@@ -465,7 +755,7 @@ __device__ int BoundaryCheck(float * X, int * I, int DIM)
 // For tracking rays
 // X and I are ray position and gridloc, vec is the direction of the ray
 // mode is for adjusting rays tracked by the tracer (0) or placed on the grid (1)
-__device__ void BoundaryAdjust(float * X, int * I, float* vec, int mode, int DIM)
+__device__ void BoundaryAdjustOld(float * X, int * I, float* vec, int mode, int DIM)
 {
 	for(int i=0; i<3; i++)
 	{
@@ -499,6 +789,35 @@ __device__ void BoundaryAdjust(float * X, int * I, float* vec, int mode, int DIM
 	}
 }
 
+__device__ void BoundaryAdjust(float * X, int * I, float* vec, int mode, int DIM)
+{
+	for(int i=0; i<3; i++)
+	{
+		if(I[i] < 0)
+		{
+			X[i] += DIM-1-1.e-3;
+			I[i] += DIM-1;
+
+			if(mode == 1)
+			{
+				I[i] = static_cast<int>(X[i]);
+			}
+		}
+		
+		if(I[i] >= DIM)
+		{
+			X[i] -= DIM-1-1.e-3;
+			I[i] -= DIM-1;
+
+			if(mode == 1)
+			{
+				I[i] = static_cast<int>(X[i]);
+			}
+		}
+	}
+	
+}
+
 /*// For new rays
 __device__ void BoundaryAdjust_new(float * X, int * I, int DIM)
 {
@@ -528,10 +847,11 @@ __device__ void BoundaryAdjust_new(float * X, int * I, int DIM)
 // Nside:	HEALPix parameter
 // L:		Physical length of the side of the box
 // int is used because 2e9 is enough to get to HEALPix order 13
+// dt:		Length of the previous time step in Myr
 __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 								const source *Parts, float *GamGrid, float* dEArray,
 								Ray *RayDat,  int *N, int N0,
-								float L, float a, float *nfSback, Domain domain)
+								float L, float a, float *nfSback, Domain domain, float dt)
 {
 	// Determine properties of the ray to be traced:
 	
@@ -598,14 +918,6 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 //	printf("%d\t%e\t%d\t%d\t%d\n", pID, ray[0], I[0], I[1], I[2]);
 //	printf("%d\t%e\t%e\t%e\t%e\n", pID, ray[0], vec[0], vec[1], vec[2]);
 	
-	// Find flux for each bin of the ray:
-	float flux[FREQ_BIN_NUM];
-	for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
-	{
-		float source = Parts[partID].gam/Npix;
-		flux[nBin] = gfn[nBin]*source*__expf(-ray->tau[nBin]);
-	}
-	
 	// Grab the cross sections
 	float sig[SPECIES][FREQ_BIN_NUM];
 	sigma(sig);
@@ -616,11 +928,12 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 	
 	// Set the max distance to trace a ray
 	float Rmax = 1.7320*DIMX;
+	//float Rmax = 32;
 	float Rsplit = sqrt(Npix/12.56636/OMEGA_RAY);
 	
 	float dcross = 	fabsf(Rsplit - r_dom);
-	if( dcross < 2.0)
-		Rsplit = Rsplit - 2.0;
+	/*if( dcross < 2.0)
+		Rsplit = Rsplit - 2.0;*/
 	
 	while(ray->R < Rsplit)
 	{
@@ -646,6 +959,7 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 			{
 				if(BoundaryCheck(X, I, DIMX))
 				{
+					//printf("CCC %e %e %e\n", X[0], X[1], X[2]); //CHECKXXX
 					BoundaryAdjust(X, I, vec, 0, DIMX);
 				}
 			}
@@ -654,11 +968,11 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 			if(domain.loc(I) == domID)
 			{
 				ind = I[0] + dim*I[1] + dim*dim*I[2] - d_ind;
-		
+				
 				memcpy(I0, I, 3*sizeof(int));
 				memcpy(X0, X, 3*sizeof(float));
 		
-				dR += raystep(X, I, X, I, vec);
+				dR += raystep(X0, I0, X0, I0, vec);
 			}
 			else
 			{
@@ -669,7 +983,16 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 		}
 		
 		ray->R += dR;
-		
+		for(int nBin=0;nBin<FREQ_BIN_NUM;nBin++)
+		{
+			if(isnan(ray->flux[nBin]))
+			{
+				int i_0 = ind/(dim*dim);
+				int i_1 = (ind/dim) % dim;
+				int i_2 = ind%dim;
+				printf("Problem Back Trace! %d %d %d %e %e)\n", i_0, i_1, i_2, xGrid[ind+nElements], ray->R);
+			}
+		}
 		/*if(ind < 0 || ind >= dim*dim*dim)
 			printf("??? %d %d\n", domID, ind);*/
 		
@@ -677,13 +1000,13 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 		float dL = (dR/DIMX)*L*a;
 		
 		// Hydrogen
-		float nH		= nGrid[ind]*(1.0-Y_P);
-		float nHI		= nH*xGrid[ind];
+		float nH		= nGrid[ind]*(1.0-Y_P)*1.00;
+		float nHI		= nH*MAX(1.e-10, xGrid[ind]);
 		float NcolHI	= 3.086e24*dL*pow(a,-3)*nHI;
 		
 		// Helium
 		float nHe		= nGrid[ind]*0.25*Y_P;
-		float nHeI		= nHe*xGrid[ind+nElements];
+		float nHeI		= nHe*MAX(1.e-10, xGrid[ind+nElements]);
 		float NcolHeI	= 3.086e24*dL*pow(a,-3)*nHeI;
 		
 		/////////	Adjacent pixel correction //////////
@@ -738,33 +1061,70 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 		{
 			fc = 1.0;
 		}
+		// Truncating the correction for testing purposes
+		//fc = MAX(0.8, fc);
 		/////////	Adjacent pixel correction //////////
 		
 		float gamH = 0;
 		float gamHe = 0;
 		float dE = 0;
 		
+		/////////	Absorption limiting constants //////////
+		// Total flux along the ray
+		/*double S_0=0.0;
+		for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
+		{
+			S_0 += ray->flux[nBin];
+		}
+		// "density" of rays within a cell/cell face
+		double C = OMEGA_RAY*pow(Rsplit/ray->R, 2);
+		// Size of and number of atoms in the cell
+		double L_cell = (1.0/DIMX)*L*a;
+		double LANX = pow(L_cell*3.086e24, 3)*nH;//*xGrid[ind];
+		LANX = LANX*(dL/L_cell);	// Correction for length of ray
+		// Ionization time
+		double T_ion = 1.0e0*LANX/C/((S_0+1.e-30)*9.5234e48);
+		
+		double Delta_t = dt*3.15e13;
+		double R_ion = Delta_t/T_ion;*/
+		
 		for(int nBin=0;nBin<FREQ_BIN_NUM;nBin++)
 		{
-			float dtau, dtauH, dtauHe, dampH, dampHe, absorb, A, B;
+			float dtau, dtauH, dtauHe, dampH, dampHe, transmit, absorb, A, B;
 			
 			// Hydrogen
 			dtauH = sig[0][nBin]*NcolHI;
+			
 			dampH = exp(-dtauH);
+			
+			// Absorption limiting execution
+			/*double dtauH_new;
+			if(Delta_t > T_ion)
+			{
+				double w = ray->flux[nBin]/S_0;
+				double dtauH_critical = -log(1.0 - MIN(0.999,w*T_ion/Delta_t) );
+				dtauH_new = MIN( dtauH, dtauH_critical );
+			}
+			dtauH = dtauH_new;*/
+			/*if(T_ion < Delta_t)
+			{
+				dampH = MAX((1.0 - T_ion/Delta_t)/3.0, dampH);
+				//dtauH = -log(dampH);
+				//dampH *= (1.0 - (1.0-exp(-R_ion))/R_ion);
+			}*/
 			
 			// Helium
 			dtauHe = sig[1][nBin]*NcolHeI;
 			dampHe = exp(-dtauHe);
 			
-			dtau = dtauH + dtauHe;
-			
-			// Keep track of total tau
-			ray->tau[nBin] += dtau;
-			
 			// Number of absorbtions per second
-			absorb = flux[nBin]*(1.0 - dampH*dampHe);
+			absorb = ray->flux[nBin]*(1.0 - dampH*dampHe);
+			
+			// Keep track of total flux
+			ray->flux[nBin] *= dampH*dampHe;
 			
 			// Fraction absorbed by H, He
+			dtau = dtauH + dtauHe;
 			if(dtau < 1.e-10)
 			{
 				// simplify for dtau~0
@@ -785,14 +1145,11 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 			gamHe	+= fc*B*absorb/nHe;
 			
 			// Add the energy up CHECKXXX
-			dE		+= fc*A*(energy[nBin]-13.6)*absorb/nH;
-			dE		+= fc*B*(energy[nBin]-24.6)*absorb/nHe;
+			dE		+= fc*A*MAX(energy[nBin]-13.6,0)*absorb/nH;
+			dE		+= fc*B*MAX(energy[nBin]-24.6,0)*absorb/nHe;
 //			dE		+= fc*(energy[nBin]-13.6)*absorb/nGrid[ind];
-			
-			// Update ray luminosity
-			flux[nBin] *= dampH*dampHe;
 		}
-		
+		dE = 0;
 		// Update flux array
 		atomicAdd(GamGrid + ind, gamH);
 		atomicAdd(GamGrid + ind + nElements, gamHe);
@@ -801,7 +1158,9 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 		atomicAdd(dEArray + ind, dE);
 		
 		/////////	Adjacent pixel correction //////////
-		float ratio = xGrid[ind_c]/xGrid[ind];
+		float ratio = 1.0;
+		//ratio *= xGrid[ind_c]/xGrid[ind];
+		ratio *= nGrid[ind]/nGrid[ind_c];
 		//float ratio = 1.0;
 		float gamH_c = ratio*gamH*(1.0-fc)/fc;
 		float gamHe_c = ratio*gamHe*(1.0-fc)/fc;
@@ -823,41 +1182,52 @@ __global__ void rayTraceKernel(	const float *nGrid, const float *xGrid,
 		memcpy(X2, ray->position, 3*sizeof(float));
 		memcpy(I2, ray->gridloc, 3*sizeof(int));
 		
+		float f_temp[3];
+		int i_temp[3];
+
+		for(int i=0; i<3; i++)
+		{
+			f_temp[i] = X[i];
+			i_temp[i] = I[i];
+		}
+		
 		if(PERIODIC == 1)
 		{
 			
 			if(BoundaryCheck(X, I, DIMX))
 			{
+				//printf("AAA %e %e %e\n", X[0], X[1], X[2]); CHECKXXX
 				BoundaryAdjust(X, I, vec, 0, DIMX);
-			}
-			
-			if(0 && pixID == 10096)
-			{
-				printf("A %d %d %d %f %f %f \n", I2[0], I2[1], I2[2], X2[0], X2[1], X2[2]);
-				printf("B %d %d %d %f %f %f \n", I[0], I[1], I[2], X[0], X[1], X[2]);
 			}
 		}
 		
-		nDom = domain.loc(I);
-		
-		if(	nDom != domID )
+		// Terminate the ray
+		//if(	ray->R > Rmax || BoundaryCheck(X, I, DIMX) || ray->flux[0] < 1.e-12)
+		if(	ray->R > Rmax || ray->flux[1] < 1.e-8)
 		{
-			rayFinish(ray, nDom, domain);
+			ray->set_dom(-1);
 			atomicSub(N, 1);
+
+			for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
+			{
+				atomicAdd(nfSback + nBin, ray->flux[nBin]); // CHECKXXX
+				if(isnan(ray->flux[nBin]))
+				{
+					printf("Checking ray->R = %f", ray->R);
+					printf("Problem! %d (%d %d %d) (%d %d %d)\n", nBin, i_temp[0], i_temp[1], i_temp[2], I[0], I[1], I[2]);
+					printf("Problem! %d (%e %e %e) (%e %e %e)\n", nBin, f_temp[0], f_temp[1], f_temp[2], X[0], X[1], X[2]);
+				}
+			}
 			
 			return;
 		}
 		
-		// Terminate the ray above given optical depth.
-		if(	ray->tau[FREQ_BIN_NUM-1] > 8.0 || ray->R > Rmax || BoundaryCheck(X, I, DIMX))
+		nDom = domain.loc(I);
+
+		if(	nDom != domID )
 		{
-			ray->set_dom(-1);
+			rayFinish(ray, nDom, domain);
 			atomicSub(N, 1);
-			
-			for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
-			{
-				atomicAdd(nfSback + nBin, flux[nBin]); // CHECKXXX
-			}
 			
 			return;
 		}
@@ -882,7 +1252,8 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 	int threadID = 	blockID * blockDim.x * blockDim.y
 					+ threadIdx.y * blockDim.x + threadIdx.x;
 	
-	// Only computing Npix rays
+	// Only computing Npix rays CHECKXXX
+	
 	if(threadID >= N0)
 		return;
 	
@@ -924,6 +1295,13 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 			ray_split->set_part(partID);
 			ray_split->set_pix(new_ID, new_ord);
 			
+			float flux_init[FREQ_BIN_NUM];
+			for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
+			{
+				flux_init[nBin] = ray->flux[nBin]/4;
+			}
+			ray_split->set_flux(flux_init);
+			
 			ray_split->set_position(origin, ray->R, direction);
 			
 			// Apply boundary
@@ -942,7 +1320,8 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 			{
 				if(BoundaryCheck(rayX, rayI, DIMX))
 				{
-					BoundaryAdjust(rayX, rayI, direction, 1, DIMX);
+					//printf("BBB %e %e %e\n", rayX[0], rayX[1], rayX[2]); //CHECKXXX
+					BoundaryAdjust(rayX, rayI, direction, 1, DIMX); // mode = 1 originally
 				}
 			}
 			if(new_ID == check)
@@ -953,18 +1332,16 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 			int splitDom = domain.loc(ray_split->gridloc);
 			ray_split->set_dom(splitDom);
 			
-			for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
-			{
-				ray_split->tau[nBin] = ray->tau[nBin];
-			}
-			
 			// Move rays for different domains to the buffer
-			if(splitDom != rayDom && splitDom != -1)
+			if(splitDom != rayDom  && splitDom >=0 && splitDom <8)
 			{
 				int nBufID = atomicAdd((nBufLoc + splitDom), 1);
 				int pix, ord;
 				ray_split->get_pix(&pix,&ord);
 				RayBuf[splitDom*NUM_BUF + nBufID].copy_ray(*ray_split);
+				int Nside2 = 1 << (2*ord);
+				if(pix < 0 || pix > 12*Nside2)
+					printf("SPLIT ADJUST Domain %d threadID %d N0 %d\n", domain.get_id(), threadID, N0);
 				//printf("Split ray in wrong domain! %d: %d -> %d, (%d, %d, %d) %f\n", new_ID, rayDom, splitDom, rayI[0], rayI[1], rayI[2], ray->R);
 				ray_split->set_dom(-1);
 			}
@@ -989,14 +1366,18 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 			float direction[3];
 			fpix2vec_nest(Nside, pixID, direction);
 			//if(direction[0]<-0.75 || direction[1]<-0.75 || direction[2]<-0.75)
-			if(1)
+			if(pixID >= 0)
 			{
 				// Copy ray into buffer
-				int nBufID = atomicAdd(nBufLoc + dom, 1);
+				int nBufID = atomicAdd((nBufLoc + dom), 1);
 				//printf("A %d\t%d\t%d\t%d\n", domain.get_id(), dom, nBufLoc[dom], dom*NUM_BUF+nBufID);
 				int pix, ord;
 				ray->get_pix(&pix,&ord);
-			
+
+				int Nside2 = 1 << (2*ord);
+				if(pix < 0 || pix > 12*Nside2)
+					printf("NORMAL BUFFER Domain %d threadID %d N0 %d\n", domain.get_id(), threadID, N0);
+				
 				RayBuf[dom*NUM_BUF + nBufID].copy_ray(*ray);
 				//ray->R = temp;
 			}
@@ -1006,6 +1387,6 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 			return;
 		}
 	}
-	printf("Couldn't find home for our ray!\n");
+	printf("Couldn't find home for our ray! %d\n", ray->get_dom());
 	ray->set_dom(-1);
 }

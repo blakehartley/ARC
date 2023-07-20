@@ -14,7 +14,7 @@ using namespace std;
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
+//#include <cuda_gl_interop.h>
 
 #include "./arc_kernels.cu"
 
@@ -38,6 +38,16 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
+#define CUDA_CHECK_TEST(ans, var) { gpuAssert_test((ans), __FILE__, __LINE__, var); }
+inline void gpuAssert_test(cudaError_t code, const char *file, int line, int var, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d -> test var = %d\n", cudaGetErrorString(code), file, line, var);
+      if (abort) exit(code);
+   }
+}
+
 // Perform calculations to produce Flux arrays
 // DensArray	= Array of densities in cm^-3
 // x_NArray		= Array of neutral fractions
@@ -45,11 +55,12 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 // FluxArray	= Array of total ionizations, per baryon per second /1Mpc
 // EArray		= Array of energies per baryon
 // numParts		= Number of source objects
-// L, a	= Length of the side of the box and scale factor
+// L, a			= Length of the side of the box and scale factor
+// dt_ion		= last ionization time step
 void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		float* FluxArray_dev, float* dEArray_dev, Ray* RayBuf, 
 		int* PartInfo, int* ndBuf, float L, float a,
-		float *dt, float* nfSback, Domain domain)
+		double *local_vars, float* nfSback, Domain domain, float dt_ion)
 {
 	int dim = domain.get_dim();
 	
@@ -100,7 +111,7 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	//CUDA_CHECK( cudaMemGetInfo(&free1, &total) );
 	
 	// Allocate memory and copy arrays to the device
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaEventRecord( timeA, 0 ) );
 	
 	size_t sizeR = sizeof(RayBuf[0]);
@@ -218,6 +229,19 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 					RayDat[index].set_part(PartInfo[2]);
 					RayDat[index].set_pix(j, ord);
 					
+					// Defining the initial flux array for initialization
+					float flux_init[FREQ_BIN_NUM]={0};
+					for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
+					{
+						// Start with the total luminosity of the source
+						flux_init[nBin] = source_host[PartInfo[2]].gam;
+						
+						// Break the fluxes down by frequency bin
+						// Divide by initial number of pixels
+						flux_init[nBin] *= gfn[nBin]/nPix;
+					}
+					RayDat[index].set_flux(flux_init);
+					
 					float position[3], direction[3]={0};
 					position[0] = source_host[PartInfo[2]].x;
 					position[1] = source_host[PartInfo[2]].y;
@@ -235,6 +259,19 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 					RayDat[index].set_dom(domain.get_id());
 					RayDat[index].set_part(PartInfo[2]);
 					RayDat[index].set_pix(pix, ord);
+					
+					// Defining the initial flux array for initialization
+					float flux_init[FREQ_BIN_NUM]={0};
+					for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
+					{
+						// Start with the total luminosity of the source
+						flux_init[nBin] = source_host[PartInfo[2]].gam;
+						
+						// Break the fluxes down by frequency bin
+						// Divide by initial number of pixels
+						flux_init[nBin] *= gfn[nBin]/jetOnNum;
+					}
+					RayDat[index].set_flux(flux_init);
 					
 					float position[3], direction[3]={0};
 					position[0] = source_host[PartInfo[2]].x;
@@ -267,23 +304,41 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	// Number of active rays:
 	int *nRays_dev;
 	CUDA_CHECK( cudaMalloc((void **)&nRays_dev, sizeof(int)) );
-	int maxloop = 0;
+	// Amount of used memory
+	double cuda_db_max[2] = {0.0, 0.0};
+
 	// Kernel loop
 	for(;nRays0>0;)
 	{
-		//printf("Domain: %d\tnRays0 = %d\n", domain.get_id(), nRays0);
 		// Set CUDA kernel variables
+		/*struct cudaDeviceProp properties;
+		cudaGetDeviceProperties(&properties, 0);
+		cout<<"using "<<properties.multiProcessorCount<<" multiprocessors"<<endl;
+		cout<<"max threads per processor: "<<properties.maxThreadsPerMultiProcessor<<endl;*/
 		dim3 threadsPB(16, 16, 1);
 		//	int gridx = 65535;
 		//	int gridy = (nInit/256)/65535 + 1;
 		int grid = (int) sqrt(nRays0/256) + 1;
 		dim3 blocksPG(grid, grid, 1);
- 
+		//dim3 blocksPG(64, 64, 1);
+		//printf("Domain: %d\tnRays0 = %d\tgrid = %d\tblocksPG = %d\tthreadsPB = %d\n", domain.get_id(), nRays0, grid, blocksPG, threadsPB);
+
+		if(false) // show memory usage of GPU
+		{
+			size_t free_byte ;
+			size_t total_byte ;
+			/*cuda_status = cudaMemGetInfo( &free_byte, &total_byte ) ;
+			if ( cudaSuccess != cuda_status ){
+				printf("Error: cudaMemGetInfo fails, %s \n", cudaGetErrorString(cuda_status) );
+				exit(1);
+			}*/
+			CUDA_CHECK(cudaMemGetInfo( &free_byte, &total_byte ));
+			double free_db = (double)free_byte ;
+			double total_db = (double)total_byte ;
+			double used_db = total_db - free_db ;
+			printf("GPU %d memory usage: used = %f, free = %f MB, total = %f MB\n", domain.get_id(), used_db/1024.0/1024.0, free_db/1024.0/1024.0, total_db/1024.0/1024.0);
+		}
 		CUDA_CHECK( cudaMemcpy(nRays_dev, &nRays0, sizeof(int), cudaMemcpyHostToDevice) );
-		
-		//CUDA_CHECK( cudaMemGetInfo(&free2, &total) );
-		//if(free2 < free1)
-		//	free1 = free2;
 		
 		// Execute kernel
 		CUDA_CHECK( cudaGetLastError() );
@@ -291,36 +346,67 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		rayTraceKernel<<<blocksPG,threadsPB>>>(	DensArray_dev, x_NArray_dev, 
 												source_dev,	FluxArray_dev, dEArray_dev,
 												RayDat0_dev, nRays_dev, nRays0,
-												L, a, nfSback_dev, domain);
-
-		CUDA_CHECK( cudaPeekAtLastError() );
-		CUDA_CHECK( cudaThreadSynchronize() );
+												L, a, nfSback_dev, domain, dt_ion);
 		
+		int information = 1000000*domain.get_id() + nRays0;
+		CUDA_CHECK_TEST( cudaPeekAtLastError(), information );
+		CUDA_CHECK_TEST( cudaDeviceSynchronize(), information );
+
 		// Get the number of continuing arrays
 		CUDA_CHECK( cudaMemcpy(&nRays, nRays_dev, sizeof(int), cudaMemcpyDeviceToHost) );
 		CUDA_CHECK( cudaMemset(nRays_dev, 0, sizeof(int)) );
-//			printf("-> %d\t%f\n", nSplit, temp);
+	//			printf("-> %d\t%f\n", nSplit, temp);
 
 		// Create the new RayDat array
 		//printf("Node %d nRays0 = %d nRays = %d\n", domain.get_id(), nRays0, nRays);
-		nRays *= 4;
-		CUDA_CHECK( cudaMalloc((void **)&RayDat_dev, nRays*sizeR) );
+		CUDA_CHECK( cudaMalloc((void **)&RayDat_dev, 4*nRays*sizeR) );
 		
+		int temp_nrays = nRays;
+
 		// Split rays into new array
-		CUDA_CHECK( cudaThreadSynchronize() );
+		CUDA_CHECK( cudaDeviceSynchronize() );
 		CUDA_CHECK( cudaPeekAtLastError() );
 		//printf("%d\t%d\t%d\t%d\n", domain.get_id(), ndBuf[0], ndBuf[1], ndBuf[2]);
+		
 		raySplitKernel<<<blocksPG,threadsPB>>>(	RayDat0_dev, RayDat_dev,
 												nRays_dev, nRays0,
 												RayBuf_dev, NumBuf_dev,
 												source_dev, domain);
-		CUDA_CHECK( cudaPeekAtLastError() );
-		CUDA_CHECK( cudaThreadSynchronize() );
+		//nRays = nRays*4;
+		CUDA_CHECK( cudaMemcpy(&nRays, nRays_dev, sizeof(int), cudaMemcpyDeviceToHost) );
+		/*if(domain.get_id() == 0)
+			printf("Domain %d\tnRays0 = %d\tnRays = %d, temp_nrays = %d\n", domain.get_id(), nRays0, nRays, 4*temp_nrays);*/
+		//CUDA_CHECK( cudaMemcpy(&nRays, nRays_dev, sizeof(int), cudaMemcpyDeviceToHost) );
+		//printf("Domain: %d\tnRays0 = %d\tnRays = %d\n", domain.get_id(), nRays0, nRays);
+		information = 1000000*domain.get_id() + nRays0;
+		CUDA_CHECK_TEST( cudaPeekAtLastError(), information );
+		CUDA_CHECK_TEST( cudaDeviceSynchronize(), information );
 		
 		// Get the number of continuing arrays (post-split)
-		CUDA_CHECK( cudaMemcpy(&nRays, nRays_dev, sizeof(int), cudaMemcpyDeviceToHost) );
+		//CUDA_CHECK( cudaMemcpy(&nRays, nRays_dev, sizeof(int), cudaMemcpyDeviceToHost) );
 		CUDA_CHECK( cudaMemset(nRays_dev, 0, sizeof(int)) );
 		
+		if(true) // show memory usage of GPU
+		{
+			size_t free_byte ;
+			size_t total_byte ;
+			/*cuda_status = cudaMemGetInfo( &free_byte, &total_byte ) ;
+			if ( cudaSuccess != cuda_status ){
+				printf("Error: cudaMemGetInfo fails, %s \n", cudaGetErrorString(cuda_status) );
+				exit(1);
+			}*/
+			CUDA_CHECK(cudaMemGetInfo( &free_byte, &total_byte ));
+			double free_db = (double)free_byte ;
+			double total_db = (double)total_byte ;
+			double used_db = total_db - free_db ;
+			//printf("GPU %d memory usage: used = %f, free = %f MB, total = %f MB\n", domain.get_id(), used_db/1024.0/1024.0, free_db/1024.0/1024.0, total_db/1024.0/1024.0);
+			if(used_db > cuda_db_max[0])
+			{
+				cuda_db_max[0] = used_db;
+				cuda_db_max[1] = total_db;
+			}
+		}
+
 		// Free old array
 		CUDA_CHECK( cudaFree(RayDat0_dev) );
 
@@ -330,12 +416,22 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		
 		// Reset counter
 		nRays0 = nRays;
-		maxloop++;
+		/*if(domain.get_id()!=-2)
+		{
+			int ndTemp[8];
+			CUDA_CHECK( cudaMemcpy(	ndTemp, NumBuf_dev,
+									8*sizeof(int), cudaMemcpyDeviceToHost) );
+			for(int k=0;k<8;k++)
+			{
+				printf("%d ", ndTemp[k]);
+			}
+			printf("in domain %d\n", domain.get_id());
+		}*/
 		//printf("%d\t%d\t%d\t%d\n", domain.get_id(), PartInfo[0], PartInfo[1], PartInfo[2]);
 	}
 	
 	// Free unecessary array(s)
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaFree(nRays_dev) );
 	CUDA_CHECK( cudaFree(RayDat0_dev) );
 //	CUDA_CHECK( cudaFree(RayDat_dev) );	//CHECKXXX
@@ -363,15 +459,15 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	
 	CUDA_CHECK( cudaFree(nfSback_dev) );
 	
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaEventRecord( timeD, 0 ) );
 	
 	float time0, time1, time2;
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaEventElapsedTime( &time0, timeA, timeB ) );
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaEventElapsedTime( &time1, timeB, timeC ) );
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaEventElapsedTime( &time2, timeC, timeD ) );
 	
 	CUDA_CHECK( cudaEventDestroy(timeA) );
@@ -381,7 +477,8 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	
 	//printf("Ray Trace (node %d):\t%f\t%f\t%f\n", domain.get_id(), time0/1000, time1/1000, time2/1000);
 	
-	dt[0] = time1/1000;
+	local_vars[0] = cuda_db_max[0];
+	local_vars[1] = cuda_db_max[1];
 }
 
 // Integrate neutral fractions differential equations
@@ -440,11 +537,11 @@ void ion(	float* DensArray_dev, float* x_NArray_dev, float* FluxArray_dev,
 	CUDA_CHECK( cudaGetLastError() );
 	ionization<<<numBlocks1, numThreads1>>>(*dt, err_dev, DensArray_dev, x_NArray_dev, FluxArray_dev, EArray_dev, dEArray_dev, back_dev, dim, a);
 	CUDA_CHECK( cudaPeekAtLastError() );
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	
 	CUDA_CHECK( cudaEventRecord( timeC, 0 ) );
 	
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	
 	CUDA_CHECK( cudaMemcpy(fErr, err_dev, sizeof(float), cudaMemcpyDeviceToHost) );
 	CUDA_CHECK( cudaMemcpy(EArray, EArray_dev, size2, cudaMemcpyDeviceToHost) );
@@ -468,8 +565,8 @@ void ion(	float* DensArray_dev, float* x_NArray_dev, float* FluxArray_dev,
 	//printf("Ionization (node %d):\t%f\t%f\t%f\n", domain.get_id(), time0/1000, time1/1000, time2/1000);
 }
 
-void dt_H(	float* rate, float* DensArray_dev, float* x_NArray_dev,
-			float* FluxArray_dev, float* EArray, 
+void dt_H(	double* rate,  float dt, float* DensArray_dev, float* x_NArray_dev,
+			float* FluxArray_dev, float* EArray,
 			const float* background, const float L, const float a, Domain domain)
 {
 	//long elements = DIMX*DIMY*DIMZ;
@@ -491,11 +588,11 @@ void dt_H(	float* rate, float* DensArray_dev, float* x_NArray_dev,
 	float* EArray_dev;
 	float* back_dev;
 	
-	// FILTER
+	/*// FILTER
 	float* dtFilter = new float[elements];
 	float* dtFilter_dev;
 	CUDA_CHECK( cudaMalloc((void **)&dtFilter_dev, size2) );
-	CUDA_CHECK( cudaMemcpy(dtFilter_dev, dtFilter, size2, cudaMemcpyHostToDevice) );
+	CUDA_CHECK( cudaMemcpy(dtFilter_dev, dtFilter, size2, cudaMemcpyHostToDevice) );*/
 	
 	CUDA_CHECK( cudaMalloc((void **)&EArray_dev, size2) );
 	CUDA_CHECK( cudaMalloc((void **)&back_dev, 2*SPECIES*sizeof(float)) );
@@ -503,30 +600,29 @@ void dt_H(	float* rate, float* DensArray_dev, float* x_NArray_dev,
 	CUDA_CHECK( cudaMemcpy(EArray_dev, EArray, size2, cudaMemcpyHostToDevice) );
 	CUDA_CHECK( cudaMemcpy(back_dev, background, 2*SPECIES*sizeof(float), cudaMemcpyHostToDevice) );
 	
-	//rate[0] = 0.0;
-	float* rate_dev;
-	CUDA_CHECK( cudaMalloc((void **)&rate_dev, 2*sizeof(float)) ); 	
-	CUDA_CHECK( cudaMemcpy(rate_dev, rate, 2*sizeof(float), cudaMemcpyHostToDevice) );
+	double* rate_dev;
+	CUDA_CHECK( cudaMalloc((void **)&rate_dev, 6*sizeof(double)) ); 	
+	CUDA_CHECK( cudaMemcpy(rate_dev, rate, 6*sizeof(double), cudaMemcpyHostToDevice) );
 	
 	CUDA_CHECK( cudaGetLastError() );
-	timestep<<<numBlocks1, numThreads1>>>(	rate_dev, dtFilter_dev,	DensArray_dev, x_NArray_dev,
+	timestep<<<numBlocks1, numThreads1>>>(	rate_dev, dt,	DensArray_dev, x_NArray_dev,
 						FluxArray_dev, EArray_dev, back_dev, dim, L, a);
 
 	CUDA_CHECK( cudaPeekAtLastError() );
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	
-	CUDA_CHECK( cudaThreadSynchronize() );
+	CUDA_CHECK( cudaDeviceSynchronize() );
 	
-	CUDA_CHECK( cudaMemcpy(rate, rate_dev, 2*sizeof(float), cudaMemcpyDeviceToHost) );
+	CUDA_CHECK( cudaMemcpy(rate, rate_dev, 6*sizeof(double), cudaMemcpyDeviceToHost) );
 	
 	CUDA_CHECK( cudaFree(EArray_dev) );
 	CUDA_CHECK( cudaFree(back_dev) );
 	CUDA_CHECK( cudaFree(rate_dev) );
 	
-	// FILTER
+	/*// FILTER
 	CUDA_CHECK( cudaMemcpy(dtFilter, dtFilter_dev, size2, cudaMemcpyDeviceToHost) );
 	
-	/*float max = 1.e-20;
+	float max = 1.e-20;
 	float buffer[DIMX];
 	for(int i=0; i<DIMX; i++)
 	{
@@ -592,8 +688,8 @@ void dt_H(	float* rate, float* DensArray_dev, float* x_NArray_dev,
 	}
 	cout << "Unfiltered = " << 0.05/3.154e13/rate[0] << endl;
 	cout << "Filtered = " << 0.05/3.154e13/max << endl;
-	rate[0] = max;*/
+	rate[0] = max;
 	
 	CUDA_CHECK( cudaFree(dtFilter_dev) );
-	delete[] dtFilter;
+	delete[] dtFilter;*/
 }

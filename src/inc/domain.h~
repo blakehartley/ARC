@@ -86,6 +86,7 @@ class Domain
 				J[1] < 0 || J[1] >= DIM ||
 				J[2] < 0 || J[2] >= DIM )
 			{
+				printf("slipping through the cracks!\n");
 				return -1;
 			}
 			

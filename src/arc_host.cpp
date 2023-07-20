@@ -26,9 +26,10 @@ using namespace std;
 //#define BOX_SIZE 0.015
 //#define BOX_SIZE 0.0066 // Test123
 //#define BOX_SIZE 0.714286 // Test4
-#define HUBBLE 0.7			// h
+#define HUBBLE 0.70			// h
 //#define HUBBLE 1.0			// Test
-#define MLIM 100.0			// M_lim
+#define MLIM -14.0			// M_lim
+#define SINGLE_SOURCE 0.5251
 
 // Error handling macros
 #define MPI_CHECK(call) \
@@ -41,6 +42,8 @@ double schechter(double,double, double, double);
 double model_Mstar(double, unsigned);
 double model_log10phi(double, unsigned);
 double model_alpha(double, unsigned);
+
+double recombination_HII(double, int);
 
 double time(double redshift){
 	double h=0.6711;
@@ -72,7 +75,7 @@ void output(float* FluxArray, float* EArray, float* x_NArray, int elements, int 
 	sprintf(sFile2, "../dat/photons/flux%03d.bin", filenum);
 	ofstream ofsData0(sFile0, ios::out | ios::binary);
 	ofstream ofsData1(sFile1, ios::out | ios::binary);
-	ofstream ofsData2(sFile2, ios::out | ios::binary);
+	//ofstream ofsData2(sFile2, ios::out | ios::binary);
 	
 	char sFile3[32];
 	sprintf(sFile3, "../dat/photons/temp%03d.bin", filenum);
@@ -80,30 +83,37 @@ void output(float* FluxArray, float* EArray, float* x_NArray, int elements, int 
 	
 	//	int mod = DIMX/128;
 	//	cout << "mod = " << mod << endl;
-	int mod = 1;
 	for (long i = 0; i<elements; i++)
 	{
-		int i0 = i % (DIMX);
+		/*int i0 = i % (DIMX);
 		int j0 = i / (DIMX);
 		int k0 = i / (DIMX*DIMY);
-		//		if(i0%mod==0 && j0%mod==0 && k0%mod==0)
-		//		{
-		ofsData0.write((char*)(x_NArray + i), sizeof(float));
-		ofsData1.write((char*)(x_NArray + elements + i), sizeof(float));
-		for (int nBin = 0; nBin<SPECIES; nBin++)
+		if(i0%mod==0 && j0%mod==0 && k0%mod==0)
 		{
-			//ofsData2.write((char*)(FluxArray + elements*nBin + i), sizeof(float));
-		}
+		}*/
+		/*float invert = 1.0 - x_NArray[i];
+		ofsData0.write((char*)&invert, sizeof(float));
+		invert = 1.0 - x_NArray[elements + i];
+		ofsData1.write((char*)&invert, sizeof(float));*/
+
+		double invert = 1.0 - x_NArray[i];
+		ofsData0.write((char*)&invert, sizeof(double));
+		invert = 1.0 - x_NArray[elements + i];
+		ofsData1.write((char*)&invert, sizeof(double));
+
+		/*for (int nBin = 0; nBin<SPECIES; nBin++)
+		{
+			ofsData2.write((char*)(FluxArray + elements*nBin + i), sizeof(float));
+		}*/
 		
 		float xe = (1.0-Y_P)*(1.0-x_NArray[i])+0.25*Y_P*(1.0-x_NArray[elements + i]);
 		float T = EArray[i]/(1.5*8.6173303e-5*(1.0+xe));
 		ofsData3.write((char*)&T, sizeof(float));
-		//		}
 	}
 
 	ofsData0.close();
 	ofsData1.close();
-	ofsData2.close();
+	//ofsData2.close();
 	ofsData3.close();
 }
 
@@ -154,11 +164,22 @@ bool sortByGam(const source &lhs, const source &rhs) {return lhs.gam > rhs.gam;}
 inline void arrayChange(float*);
 inline void arrayChangeInv(float*);
 inline void BinGridRead(float*, char*, int);
+inline void BinGridRead_double(float*, char*, int);
 
-#define CUDA_CHECK(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+/*#define CUDA_CHECK(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}*/
+
+#define CUDA_CHECK(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=false)
+{
+   if (code != cudaSuccess)
    {
       fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
@@ -205,7 +226,7 @@ int main(int argc, char** argv)
 	}
 	else
 	{
-		cout << "Couldn't read input file at: " << file << endl;
+		printf("Couldn't read input file!\n");
 		return 0;
 	}
 	file.close();
@@ -284,7 +305,7 @@ int main(int argc, char** argv)
 	offsets[3]		= offsetof(Ray, R);
 	offsets[4]		= offsetof(Ray, gridloc);
 	offsets[5]		= offsetof(Ray, position);
-	offsets[6]		= offsetof(Ray, tau);
+	offsets[6]		= offsetof(Ray, flux);
 	
 	MPI_Type_create_struct(7, blocklengths, offsets, types, &mpi_ray);
 	MPI_Type_commit(&mpi_ray);
@@ -332,6 +353,12 @@ int main(int argc, char** argv)
 	__device__ float  *dEArray_dev;
 	__device__ source *source_dev;
 	
+	/*printf("%d\n\n", nSizeBytes);
+	cudaMalloc((void **)&DensArray_dev, nSizeBytes);
+	cudaMalloc((void **)&x_NArray_dev, nSizeBytes*SPECIES);
+	cudaMalloc((void **)&FluxArray_dev, nSizeBytes*SPECIES);
+	cudaMalloc((void **)&dEArray_dev, nSizeBytes);*/
+
 	CUDA_CHECK( cudaMalloc((void **)&DensArray_dev, nSizeBytes) ); 
 	CUDA_CHECK( cudaMalloc((void **)&x_NArray_dev, nSizeBytes*SPECIES) );
 	CUDA_CHECK( cudaMalloc((void **)&FluxArray_dev, nSizeBytes*SPECIES) );
@@ -358,12 +385,33 @@ int main(int argc, char** argv)
 	//float fT0 = time(9.0-0.01);	//Test
 	float fT = 0.0;
 	float fDt = fDtConst;
+
+	// Keeping track of conservation
+	double emitted_total = 0.0;
+	double gamma_total[2] = {0.0, 0.0};
+	double recombined_total[2] = {0.0, 0.0};
+	ofstream conservation ("../dat/conservation.dat", ios::out);
+	conservation << "Time\t\tS0\t\t\t";
+	conservation << "d(x_HII)\tGam_H*dt\tAl_H*dt\t\tRatio\t\t";
+	conservation << "d(x_HeII)\tGam_He*dt\tAl_He*dt\tRatio\t\t";
+	conservation << "S0_tot\t\t";
+	conservation << "x_HII\t\tGam_H*T\t\tAlp_H*T\t\t";
+	conservation << "x_HeII\t\tGam_He*T\tAlp_He*T\tFlux/S0\t\tescaped\tdt" << endl;
+	conservation.close();
 	
 	// Averaged values, and local counterparts
-	double ndSum[4], ndSum_loc[4];
+	const double xHI_init = 1.0 - 1.e-10;
+	double ndSum[8] = {	xHI_init, 1.0,
+						xHI_init*2.43e-7, 1.0*2.43e-7,
+						0.0, 0.0,
+						TNAUGHT, TNAUGHT};
+	double ndSum_loc[8];
+	double ndSum_old[8];
+	float error_loc;
+	double dAverageGridDensity;
 	
 	// Background array declarations
-	float ndot;
+	double ndot;
 	const int BACK_BINS = 1000;
 	float* Jback = new float[BACK_BINS];
 	float* Nuback = new float[BACK_BINS];
@@ -372,9 +420,15 @@ int main(int argc, char** argv)
 	float* dtRad = new float[nLayers];
 	int* haloCount = new int[nLayers];
 	int* haloDisp = new int[nLayers];
+
+	// Local GPU variables for getting information from CUDA calls
+	double local_vars[6] = {0};
+	double local_vars_red[6] = {0};
+	memset(local_vars, 0, 6*sizeof(double));
 	
-	double dTStart,dT0,dT1,dT2;
-	double dT0a, dT0b;
+	double dTStart=0,dT0=0,dT1=0,dT2=0;
+	double dT0a=0, dT0b=0;
+
 	if(commRank==0) dTStart=MPI_Wtime();
 	
 	// Summary file
@@ -403,7 +457,7 @@ int main(int argc, char** argv)
 			for (long i = 0; i<nSizeHost; i++)
 			{
 				for(int j=0; j<SPECIES; j++)
-					x_NArrayHost[i+j*nSizeHost] = 1.0;	//neutral fraction
+					x_NArrayHost[i+j*nSizeHost] = xHI_init;	//neutral fraction
 				float kB = 8.6173303e-5;			// In eV
 				EArrayHost[i] = (3./2.)*kB*TNAUGHT;
 			}
@@ -422,13 +476,16 @@ int main(int argc, char** argv)
 			getline(file, line);
 			
 			istringstream iss(line);
-			iss >> counter >> step >> iFileNum >> fT >> fDt >> fTFile >> fDtFile;
+			iss >> counter >> step >> iFileNum >> fT >> fDt >> fTFile >> fDtFile >> emitted_total >> gamma_total[0] >> recombined_total[0] >> gamma_total[1] >> recombined_total[1];
+			//iss >> counter >> step >> iFileNum >> fT >> fDt >> fTFile >> fDtFile;
 			file.close();
+			//emitted_total = 9.030e-01;
+			//recombined_total = 6.297e-01;
 			/*cout << counter << "\t" << step << "\t" << iFileNum << endl;
 			cout << fT << "\t" << fDt << "\t" << ftFile << "\t" << fDtFile << endl;*/
 			
 			// Copy previous "sum.dat" until the correct location
-			int temp = rename( "../dat/sum.dat", "../dat/last_sum.dat");
+			/*int temp = rename( "../dat/sum.dat", "../dat/last_sum.dat");
 			if( temp != 0 )
 				printf( "Error renaming file\n");
 	
@@ -464,126 +521,40 @@ int main(int argc, char** argv)
 				file0 << "\n";
 			}
 			file0.close();
-			file1.close();
+			file1.close();*/
 			
 			// Array data:
 			sprintf(name, "../dat/hydrogen/xhi%03d.bin", nLoopInit);
-			BinGridRead(x_NArrayHost, name, DIMX);
-			
+			//BinGridRead(x_NArrayHost, name, DIMX);
+			BinGridRead_double(x_NArrayHost, name, DIMX);
+
 			sprintf(name, "../dat/helium/xhei%03d.bin", nLoopInit);
-			BinGridRead(x_NArrayHost + nSizeHost, name, DIMX);
+			//BinGridRead(x_NArrayHost + nSizeHost, name, DIMX);
+			BinGridRead_double(x_NArrayHost + nSizeHost, name, DIMX);
 			
 			sprintf(name, "../dat/photons/temp%03d.bin", nLoopInit);
 			BinGridRead(EArrayHost, name, DIMX);
-			
-			sprintf(name, "%s/nanoJubilee/GridDensities/%d/GridDensities_%d_0%02d.bin", PATH.c_str(), DIMX, DIMX, iFileNum);
-			//sprintf(name, "./reduced.bin");	//Test
-			BinGridRead(DensArrayHost, name, DIMX);
-			
+			//BinGridRead_double(EArrayHost, name, DIMX);
+
 			for(int i=0; i<nSizeHost; i++)
 			{
-				float kB = 8.6173303e-5;			// In eV
-				float xe = (1.0-Y_P)*(1.0-x_NArrayHost[i]);
-				xe += 0.25*Y_P*(1.0-x_NArrayHost[nSizeHost + i]);
-				EArrayHost[i] = (1.5*kB*(1.0+xe))*EArrayHost[i]; // Test
-				//EArrayHost[i] = (1.5*kB*(1.0+xe))*100.0;
+				// Converting from stored x_HII to x_HI
+				x_NArrayHost[i] = 1.0 - x_NArrayHost[i];
+				x_NArrayHost[nSizeHost + i] = 1.0 - x_NArrayHost[nSizeHost + i];
 				
-				DensArrayHost[i] = 2.43e-7*DensArrayHost[i];
-				//float fA = 1.0/(1.0+redshift(fT+fT0));
-				//DensArrayHost[i] = 1.e-3;
-				//DensArrayHost[i] = fA*fA*fA*DensArrayHost[i];	//Test4
-			}
-			
-			cout << "First density element = " << DensArrayHost[0]/2.43e-7 << endl;
-			
-			// Particles:
-			source *p_init = new source[400000];
-			sprintf(name, "../dat/photons/slist%02d.dat", iFileNum-1);
-			file.open(name);
-			
-			ndot = 0;
-			nOnFinal = 0;
-			for(int i=0; i<nDomain; i++)
-			{
-				nOnLoc[i] = 0;
-			}
-			while (getline(file, line))
-			{
-				float X, Y, Z, M, S0;
-				istringstream iss(line);
-					
-				if(!(iss >> X >> Y >> Z >> S0 >> M))
-					break;
-				float fJet = 1.0;
-				p_init[nOnFinal].x = X;
-				p_init[nOnFinal].y = Y;
-				p_init[nOnFinal].z = Z;
-				p_init[nOnFinal].gam = S0*fFesc*fJet;	//CHECKXXX fJet
+				float xe = (1.0-Y_P)*(1.0-x_NArrayHost[i])+0.25*Y_P*(1.0-x_NArrayHost[nSizeHost + i]);
+				//float T = EArrayHost[i]/(1.5*8.6173303e-5*(1.0+xe));
 				
-				float dim2 = DIMX/2.0;
-				int ix = (int) p_init[nOnFinal].x/dim2;
-				int iy = (int) p_init[nOnFinal].y/dim2;
-				int iz = (int) p_init[nOnFinal].z/dim2;
-				
-				int ind = 4*iz + 2*iy + ix;
-				nOnLoc[ind]++;
-				
-				// ndi is the photons per particle
-				float ndi = p_init[nOnFinal].gam;
-				ndi /= 2.43e-7*pow((float) BOX_SIZE,3.0)*3.086e24;
-				ndot += ndi;
-				 
-				nOnFinal++;
+				EArrayHost[i] = EArrayHost[i]*(1.5*8.6173303e-5*(1.0+xe));
+				//EArrayHost[i] = 1.e4*(1.5*8.6173303e-5*(1.0+xe));
 			}
 			
-			// Order the particles by volume
-			particles = new source[nOnFinal];
-			for(int i=0; i<nOnFinal; i++)
+			// Priming the code to correctly load haloes
+			// Setting back iFileNum so that it triggers reloading haloes
+			if(iFileNum > 0)
 			{
-				particles[i].x = p_init[i].x;
-				particles[i].y = p_init[i].y;
-				particles[i].z = p_init[i].z;
-				particles[i].gam = p_init[i].gam;
+				iFileNum = iFileNum - 1;
 			}
-			delete[] p_init;
-			file.close();
-			
-			// Background arrays:
-			sprintf(name, "../dat/background/spec%03d.dat", nLoopInit);
-			file.open(name);
-			
-			int iback=0;
-			while (getline(file, line))
-			{
-				double temp0, temp1;
-				istringstream iss(line);
-					
-				if(!(iss >> temp0 >> temp1))
-					break;
-				
-				Nuback[iback] = temp0;
-				Jback[iback] = temp1;
-				//cout << "Nu = " << Nuback[iback] <<  "J = " << Jback[iback] << "\n";
-				iback++;
-			}
-			file.close();
-			
-			Background[0] = 0.0;
-			Background[1] = 0.0;
-			Background[2] = 0.0;
-			Background[3] = 0.0;
-			float dLogNu = log(Nuback[1]/Nuback[0])*4*3.14159;
-			
-			for(int iback=0; iback<BACK_BINS; iback++)
-			{
-				Background[0] += Jback[iback]*sig_H(Nuback[iback])*dLogNu;
-				Background[1] += Jback[iback]*sig_He(Nuback[iback])*dLogNu;
-				Background[2] += (Nuback[iback] - 13.6)*Background[0];
-				Background[3] += (Nuback[iback] - 24.6)*Background[1];
-			}
-			
-			fT += fDt;
-			step++;
 		}
 		
 		// Change to sub-domain ordering
@@ -633,9 +604,9 @@ int main(int argc, char** argv)
 	MPI_CHECK(MPI_Bcast( EArray, nSize, MPI_FLOAT, 0, commGridLoc));
 	
 	MPI_CHECK(MPI_Bcast(Background, 4, MPI_FLOAT, 0, MPI_COMM_WORLD));
-	
-	// These arrays only get sent if we're restarting:
-	if(nLoopInit != 0)
+	//printf("Restart checkxx! 0\n");
+	// These arrays only get sent if we're restarting... actually I think I set them later? CHECKXXX:
+	if(nLoopInit != 0 && false)
 	{
 		if(nGridLoc == 0)
 		{
@@ -657,21 +628,27 @@ int main(int argc, char** argv)
 		// Create a dummy array so that the loop can delete the array safely
 		CUDA_CHECK( cudaMalloc((void **)&source_dev, sizeof(source)) );
 	}
-	
+	//printf("Restart checkxx! 1\n");
 	// Free large arrays from the root node
 	if(commRank == 0)
 	{
-		delete[] DensArrayHost;
+		if(nLoopInit == 0)
+		{
+			delete[] DensArrayHost;
+		}
 		delete[] x_NArrayHost;
 		delete[] EArrayHost;
 		delete[] FluxArrayHost;
 	}
 	
 	// Copy initial arrays onto device memory
-	CUDA_CHECK( cudaMemcpy(DensArray_dev, DensArray, nSizeBytes, cudaMemcpyHostToDevice) );
+	if(nLoopInit == 0)
+	{
+		CUDA_CHECK( cudaMemcpy(DensArray_dev, DensArray, nSizeBytes, cudaMemcpyHostToDevice) );
+	}
 	CUDA_CHECK( cudaMemcpy(x_NArray_dev, x_NArray, nSizeBytes*SPECIES, cudaMemcpyHostToDevice) );
-	CUDA_CHECK( cudaMemcpy(FluxArray_dev, FluxArray, nSizeBytes*SPECIES, cudaMemcpyHostToDevice) );
-	
+	CUDA_CHECK( cudaMemcpy(FluxArray_dev, FluxArray, nSizeBytes*SPECIES, cudaMemcpyHostToDevice) )
+	//printf("Restart checkxx! 2\n");
 	// Distribute initail halo info
 	MPI_CHECK(MPI_Bcast(nOnLoc, nDomain, MPI_INT, 0, MPI_COMM_WORLD));
 	
@@ -688,7 +665,7 @@ int main(int argc, char** argv)
 		int disp = 0;
 		for(int i=0; i<nLayers-1; i++)
 		{
-			int nRemCount = nOnLoc[nGridDom] - haloDisp[i];
+			//int nRemCount = nOnLoc[nGridDom] - haloDisp[i];
 			float fOnLoc = (float) nOnLoc[nGridDom];
 			
 			haloCount[i] = (int) (fOnLoc/nLayers);
@@ -718,9 +695,11 @@ int main(int argc, char** argv)
 	
 	int nDuty = 0;
 	float fDuty = 1.0;
+
+	float flux_adjustment = 1.0;
 	
 	float fTslice = time(1.0 / nfA[iFileNum] - 1.0);
-	
+	//printf("Restart checkxx! 3 %e %e %d\n", fT, fTfinal, step);
 	for(; fT < fTfinal; step++)
 	{
 		if(commRank == 0)
@@ -732,12 +711,14 @@ int main(int argc, char** argv)
 		//if(iFileNum == 0) //Test
 		if( fT+fT0 > fTslice)
 		{
-			if(iFileNum != 0)
+			//printf("Restart checkxx! 4\n");
+			if(iFileNum != 0 && nLoopInit == 0)
 			{
 				delete[] particles;
 			}
+			
 			nOnCount = 0;
-			//printf("HUH\n");
+			
 			// Distribute new densities:
 			if(commRank == 0)
 			{
@@ -749,25 +730,33 @@ int main(int argc, char** argv)
 				ifsDens.seekg (0, ios::beg);
 				cout << "Read the particle files" << endl;
 				double FillFact = 0.0;
+				dAverageGridDensity = 0.0;
+
 				for(int i=0; i<nSizeHost; i++)
 				{
 					float buff;
 					ifsDens.read((char*)&buff, 4);
 					if(buff > 200.0)
 					{
-						DensArrayHost[i] = 2.43e-7*buff;
+						DensArrayHost[i] = 2.43e-7*200;
 						FillFact += 1.0;
 					}
 					else
 						DensArrayHost[i] = 2.43e-7*buff;
+					//DensArrayHost[i] = 2.43e-7*buff;
 					//DensArrayHost[i] = 2.43e-7;
+					dAverageGridDensity += DensArrayHost[i];
+					//DensArrayHost[i] = 2.43e-7*buff/1.02097;
 					//DensArrayHost[i] = buff*fA*fA*fA;	//Test4
 					//DensArrayHost[i] = 1.e-3;	//Test123
 				}
 				
 				arrayChange(DensArrayHost);
-				cout << "First density element = " << DensArrayHost[0]/2.43e-7 << endl;
+				dAverageGridDensity = dAverageGridDensity/nSizeHost;
+
+				cout << "First density element = " << DensArrayHost[0] << endl;
 				cout << "Filling Factor = " << FillFact/nSizeHost << endl;
+				cout << "Average Grid Density = " << dAverageGridDensity << endl;
 			}
 			
 			if(nGridLoc == 0)
@@ -803,8 +792,9 @@ int main(int argc, char** argv)
 				niOnHalos = new int[400000]; // 400000 is larger than the largest halo file
 				
 				int iFileNumTemp = iFileNum;
-				//iFileNumTemp = 99; // Use this for the test file
-				//sprintf(name, "../slice100.dat");
+				//iFileNumTemp = 997; // Use this for the test file
+				//iFileNumTemp = 1; // Use this for the test file
+				//sprintf(name, "../slice%03d.dat", iFileNumTemp);
 				sprintf(name, "%s/nanoJubilee/Reduced/slice%02d.dat", PATH.c_str(), iFileNumTemp);
 				//sprintf(name, "../sources.dat");	//Test4
 				
@@ -827,6 +817,14 @@ int main(int argc, char** argv)
 					{
 						break;
 					}
+
+					/*if(!(	iss >> ID >> mdm >>
+							X >> Y >> Z >> a >>
+							slice >> state ))
+					{
+						break;
+					}*/
+					
 					/*mdm=0;
 					slice=0;
 					state=0;
@@ -843,6 +841,7 @@ int main(int argc, char** argv)
 					
 					if(state==0)	//has merged
 					{
+						//printf("mass = %e, fMdm = %e", mass, fMdm);
 						if(nModel == 0)
 						{
 							niOnHalos[i] = 1;
@@ -867,6 +866,7 @@ int main(int argc, char** argv)
 				
 				// Run through the file again to copy relevant halo data
 				p_init = new source[nOnCount];
+				printf("nOnLimit = %d\tnOnCount = %d\n", nOnLimit, nOnCount);
 				
 				file.clear();
 				file.seekg(0, ios::beg);
@@ -883,18 +883,22 @@ int main(int argc, char** argv)
 					istringstream iss(line);
 					
 					// Read the line into the relevant variables
-					if(!(iss >> ID >> mdm >> X >> Y >> Z >> a >> slice >> state >> temp >> temp))
+					/*if(!(iss >> ID >> mdm >> X >> Y >> Z >> a >> slice >> state >> temp >> temp))
+						break;*/
+					if(!(iss >> ID >> mdm >> X >> Y >> Z >> a >> slice >> state))
 						break;
 					
 					//cout << ID << "\t" << mdm << endl;
-					float mass = 23936.0*mdm;
+					//float mass = 23936.0*mdm;
 					if(niOnHalos[i] == 1)
 					{
 						p_init[j].gam = (float) mdm;	// Mass in #dm particles
+						/*p_init[j].x = (X/(BOX_SIZE*1.e3*HUBBLE))*DIMX*0.0066/10.0;
+						p_init[j].y = (Y/(BOX_SIZE*1.e3*HUBBLE))*DIMY*0.0066/10.0;
+						p_init[j].z = (Z/(BOX_SIZE*1.e3*HUBBLE))*DIMZ*0.0066/10.0;*/
 						p_init[j].x = (X/(BOX_SIZE*1.e3*HUBBLE))*DIMX;
 						p_init[j].y = (Y/(BOX_SIZE*1.e3*HUBBLE))*DIMY;
 						p_init[j].z = (Z/(BOX_SIZE*1.e3*HUBBLE))*DIMZ;
-						
 						j++;
 					}
 					
@@ -989,7 +993,6 @@ int main(int argc, char** argv)
 					int j = nOnDisp[ind] + nOnLocTemp[ind];
 					nOnLocTemp[ind]++;
 					
-					//printf("%f\t%f\t%f\t%f\t%d\n", p_init[i].x, p_init[i].y, p_init[i].z, p_init[i].gam, ind);
 					//printf("%d\t%d\t%d\t%d\n", ind, nOnDisp[ind], (nOnLocTemp[ind]-1), j);
 					
 					particles[j].x = p_init[i].x;
@@ -1001,17 +1004,21 @@ int main(int argc, char** argv)
 					mass[j] = p_init[i].gam*23936.0;
 					
 					particles[j].gam = fJet*fFesc*S0/fDuty;	// CHECK
-					//particles[i].gam = 0.5251/1.0;	// TEST
+					//particles[j].gam = 1.e3*fFesc*SINGLE_SOURCE;	// TEST
 					//particles[j].gam = p_init[i].gam*1050.0;	// TEST
 					
 					// ndi is the photons per particle
 					float ndi = particles[j].gam;
-					ndi /= 2.43e-7*pow((float) BOX_SIZE,3.0)*3.086e24*fJet;
+					ndi /= dAverageGridDensity*pow((float) BOX_SIZE,3.0)*3.086e24*fJet;
 					ndot += ndi;	//TestCHECKXXX
+
+					printf(	"Halo %d added! S0, (n_x, n_y, nz) = %f (%f, %f, %f)\n",
+								ind, particles[j].gam,particles[j].x, particles[j].y, particles[j].z);
 				}
 				
 				char mlname[40];
 				sprintf(mlname, "../dat/photons/slist%02d.dat", iFileNum);
+
 				FILE *ML;
 				ML = fopen(mlname, "w");
 				
@@ -1028,42 +1035,47 @@ int main(int argc, char** argv)
 				delete[] p_init;
 				delete[] mags;
 				delete[] mass;
+				
+				// Adjustment
+				sprintf(mlname, "../dat/photons/slist%02d.dat", iFileNum+1);
+				
+				ifstream next_slist(mlname);
+				
+				float S_temp=0, S_now=0, S_next=0;
+
+				for(int i=0; i<nOnFinal; i++)
+				{
+					S_now += particles[i].gam/fJet/fFesc;
+				}
+
+				int i_next = 0;
+				for(int i=0; getline(next_slist, line); i++)
+				{
+					istringstream iss(line);
+					iss >> S_temp >> S_temp >> S_temp >> S_temp;
+
+					S_next += S_temp;
+					i_next += 1;
+				}
+				next_slist.close();
+
+				flux_adjustment = 1.0;
+				if(nOnFinal > 0)
+				{
+					flux_adjustment = S_next/S_now;
+				}
+				//flux_adjustment = 1.0;
+				printf("S_now = (%d, %e)\tS_next = (%d,%e)\n", nOnFinal, S_now, i_next, S_next);
+				printf("Adjustment factor for slice %d = %e\n\n", iFileNum, flux_adjustment);
 			}
 			
+			MPI_CHECK(MPI_Bcast(&dAverageGridDensity, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD));
 			MPI_CHECK(MPI_Bcast(particles, nOnFinal, mpi_source, 0, MPI_COMM_WORLD));
+			MPI_CHECK(MPI_Bcast(&flux_adjustment, 1, MPI_FLOAT, 0, MPI_COMM_WORLD));
 			
 			CUDA_CHECK( cudaFree(source_dev)); //CHECKXXX
 			CUDA_CHECK( cudaMalloc((void **)&source_dev, nOnFinal*sizeof(source)) );
 			CUDA_CHECK( cudaMemcpy( source_dev, particles, nOnFinal*sizeof(source), cudaMemcpyHostToDevice) );
-			
-			// Pre-ionize around the particles
-			for(int i; i<nSize; i++)
-			{
-				int dim = DIMX/2;
-				int id3[3];
-				
-				domain.get_id3(id3);
-				int d_ind = dim*dim*id3[2] + dim*id3[1] + id3[0];
-				
-				int hX, hY, hZ;
-				hX = dim* id3[0] + i / (dim*dim);
-				hY = dim* id3[1] + (i / dim) % dim;
-				hZ = dim* id3[2] +  i % dim;
-				
-				float pre_ion = 0.001;
-				for(int j; j<nOnFinal; j++)
-				{
-					float Rpart	= pow(particles[j].x - hX, 2);
-					Rpart		+= pow(particles[j].y - hY, 2);
-					Rpart		+= pow(particles[j].z - hZ, 2);
-					Rpart = pow(Rpart, 0.5);
-					
-					if(Rpart < 2)
-					{
-						CUDA_CHECK( cudaMemcpy( x_NArray_dev + i, &pre_ion, sizeof(float), cudaMemcpyHostToDevice) );
-					}
-				}
-			}
 			
 			// Set framework for adaptive halo calc
 			int disp = 0;
@@ -1132,7 +1144,7 @@ int main(int argc, char** argv)
 		}*/
 		
 		float nfSback[FREQ_BIN_NUM] = {0};
-		float nfSback_red[FREQ_BIN_NUM];
+		float nfSback_red[FREQ_BIN_NUM] = {0};
 		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 		
 		float dtRadLoc=0.0, dtRadTemp;
@@ -1145,7 +1157,7 @@ int main(int argc, char** argv)
 			{
 				haloCount[i] = 0;
 			}
-		}*/
+		}*///TEST
 		
 		// Particle and Ray info for the tracer to know what to do
 		int PartInfo[4];
@@ -1156,7 +1168,7 @@ int main(int argc, char** argv)
 		PartInfo[1] = haloCount[nGridLoc];
 		// Index of first particle to look at
 		PartInfo[2] = nOnDisp[nGridDom] + haloDisp[nGridLoc];
-		cout << "Process #" << commRank << " has processed " << PartInfo[1] << " halos" << endl;
+
 		int nPartRem;
 		MPI_CHECK(MPI_Allreduce( (PartInfo+1), &nPartRem, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD));
 		
@@ -1164,16 +1176,24 @@ int main(int argc, char** argv)
 		// Size dictated by domain geometry
 		Ray *SendBuf = new Ray[8*NUM_BUF];
 		Ray *RecvBuf = new Ray[8*NUM_BUF];
-		//printf("PartInfo[1] ??? %d\n", PartInfo[1]);
 		// Ray tracer decreases PartInfo[1] as it works through the particles
-		int testTot = 0;
+
+		// Keeping track of the maximum memory usage for diagnostic purposes
+		double cuda_memory[2] = {0.0, 0.0};
+		
 		while(nPartRem > 0)
 		{
-			testTot++;
-			//printf("Node %d, PartInfo[1] = %d, PartInfo[2] = %d\n", commRank, PartInfo[1], PartInfo[2]);
 			// Tell the tracer whether to trace from sources or buffer
 			PartInfo[3] = 0;
-			//printf("Domain %d, PartInfo = (%d, %d, %d, %d)\n", domain.get_id(), PartInfo[0], PartInfo[1], PartInfo[2], PartInfo[3]);
+
+			// Code to serialize the calculations
+			/*PartInfo[3] = 1;
+			int current_index = nOnFinal - nPartRem;
+			if(PartInfo[2] == current_index && PartInfo[1] != 0)
+			{
+				PartInfo[3] = 0;
+			}*/
+			//printf("Domain %d, PartInfo = (%d, %d, %d, %d), current = %d\n", domain.get_id(), PartInfo[0], PartInfo[1], PartInfo[2], PartInfo[3], current_index);
 			
 			// Number of rays in each buffer
 			int ndBuf[8];
@@ -1181,24 +1201,42 @@ int main(int argc, char** argv)
 			{
 				ndBuf[i] = 0;
 			}
-		
+			
 			// Call initial ray tracing routine
 			MPI_CHECK(MPI_Barrier(commGridDom));
 			if(commRank==0) {dT0a=MPI_Wtime();}
 			
 			rad(	DensArray_dev, x_NArray_dev, source_dev, FluxArray_dev, dEArray_dev, SendBuf,
-					PartInfo, ndBuf, BOX_SIZE, fA, &dtRadTemp, nfSback, domain);
+					PartInfo, ndBuf, BOX_SIZE, fA, local_vars, nfSback, domain, fDt);
 			
+			// CHECKING FOR ARRAY TROUBLES //
+			/*float check3[1]={0};
+			int asdf3=0;
+			for(int i=0; i<nSize; i++)
+			{
+				//CUDA_CHECK( cudaMemcpy( check3, x_NArray_dev+i, sizeof(float), cudaMemcpyDeviceToHost) );
+				asdf3 += check3[0];
+				if(isnan(check3[0]))
+				{
+					printf("%e HOST PROBLEM, at index %d\n", check3[0], i);
+				}
+				if(isnan(x_NArray[i]))
+				{
+					printf("%e IS A PROBLEM, should be %d\n", x_NArray[i], i);
+				}
+			}*/
+			MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 			MPI_CHECK(MPI_Barrier(commGridDom));
 			
 			if(commRank==0) {dT0b=MPI_Wtime();}
 			dtRadLoc += dtRadTemp;
 			
+			//printf("PartInfo[1] = %d, PartInfo[1] = %d, PartInfo[2] = %d\n", PartInfo[0], PartInfo[1], PartInfo[2]);
 			// Distribute buffers and trace appropriately
 			PartInfo[3] = 1;
 			
 			// Loop for propagating rays between domains
-			int MAX_LOOPS = 5;
+			int MAX_LOOPS = 8;
 			for(int j=0; j<MAX_LOOPS; j++)
 			{
 				MPI_CHECK(MPI_Barrier(commGridDom));
@@ -1254,15 +1292,35 @@ int main(int argc, char** argv)
 					memcpy(SendBuf + d_buf, RecvBuf + d_buf, ndBuf[i]*sizeR);
 				}
 				MPI_CHECK(MPI_Barrier(commGridDom));
-				ndBuf[nGridDom] = 0;
-				MPI_CHECK(MPI_Barrier(commGridDom));
-				/*if(nGridDom == 0)
-					printf("-------------------- %f s --------------------\n", (MPI_Wtime() - dTRay));*/
 			
-				float dummy;
+				/*int neg = 0;
+				for(int i=0; i<3; i++)
+				{
+					int disp = i*NUM_BUF;
+					for(int j=0; j<ndBuf[i]; j++)
+					{
+						if(SendBuf[disp + j].get_dom() == -1)
+						{
+							neg++;
+						}
+					}
+				}*/
+				//printf("Domain %d recv (%d, %d, %d)\n", domain.get_id(), ndBuf[0], ndBuf[1], ndBuf[2]);
+				MPI_CHECK(MPI_Barrier(commGridDom));
+				//if(nGridDom == 0)
+					//printf("-------------------- %f s --------------------\n", (MPI_Wtime() - dTRay));
+			
+				
 				rad(	DensArray_dev, x_NArray_dev, source_dev, FluxArray_dev,
 						dEArray_dev, SendBuf, PartInfo, ndBuf,
-						BOX_SIZE, fA, &dummy, nfSback, domain);
+						BOX_SIZE, fA, local_vars, nfSback, domain, fDt);
+				
+				MPI_CHECK(MPI_Allreduce(local_vars, local_vars_red, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD));
+				memset(local_vars, 0, 6*sizeof(double));
+				
+				// Used memory, total memory
+				cuda_memory[0] = MAX(local_vars_red[0], cuda_memory[0]);
+				cuda_memory[1] = MAX(local_vars_red[1], cuda_memory[1]);
 				
 				/*nBufTot = 0;
 				for(int j=0; j<3; j++)
@@ -1276,14 +1334,19 @@ int main(int argc, char** argv)
 			}
 			
 			MPI_CHECK(MPI_Allreduce( PartInfo+1, &nPartRem, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD));
+			//printf("nOnFinal = %d, PartInfo[0] = %d, PartInfo[1] = %d\n", nOnFinal, nPartRem, PartInfo[1]);
 		}
 		
 		delete[] SendBuf;
 		delete[] RecvBuf;
 		
+		printf("Peak GPU Memory: %f MB/ %f MB\n", cuda_memory[0]/1024/1024, cuda_memory[1]/1024/1024);
+
 		// Copy flux arrays off the devices
 		CUDA_CHECK( cudaMemcpy(	FluxArray, FluxArray_dev, nSizeBytes*SPECIES, cudaMemcpyDeviceToHost) );
 		CUDA_CHECK( cudaMemcpy(	dEArray, dEArray_dev, nSizeBytes, cudaMemcpyDeviceToHost) );
+		
+//		cout << "Process #" << commRank << " has finished the rad kernel." << endl;
 		
 		// 6. Reduce Flux and Energy Arrays
 		float* FluxArray_red = new float[nSize*SPECIES];
@@ -1295,8 +1358,23 @@ int main(int argc, char** argv)
 									MPI_FLOAT, MPI_SUM, commGridLoc));
 		MPI_CHECK(MPI_Allreduce(	nfSback, nfSback_red, FREQ_BIN_NUM,
 									MPI_FLOAT, MPI_SUM, commGridLoc));
+		memset(nfSback, 0, FREQ_BIN_NUM*sizeof(float));
 		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 		
+		// Adjust the overall flux!
+		float flux_adjustment_current = 1.0*(fTslice - (fT+fT0))/(fTslice - fTslice0) + flux_adjustment*((fT+fT0) - fTslice0)/(fTslice - fTslice0);
+		if(commRank == 0)
+		{
+			printf("Current flux adjustment = %e\n", flux_adjustment_current);
+		}
+		for(int nSpe=0; nSpe<SPECIES; nSpe++)
+		{
+			for(int i=0; i<nSize; i++)
+			{
+				FluxArray_red[i + nSpe*nSize] *= flux_adjustment_current;
+			}
+		}
+
 		// Copy the reduced flux array back onto the devices CHECKXXX
 		CUDA_CHECK( cudaMemcpy(	FluxArray_dev, FluxArray_red, nSizeBytes*SPECIES, cudaMemcpyHostToDevice) );
 		memcpy(FluxArray, FluxArray_red, nSizeBytes*SPECIES);
@@ -1304,7 +1382,8 @@ int main(int argc, char** argv)
 		
 		CUDA_CHECK( cudaMemcpy(	dEArray_dev, dEArray_red, nSizeBytes, cudaMemcpyHostToDevice) );
 		memcpy(dEArray, dEArray_red, nSizeBytes);
-		delete[] dEArray_red;
+		
+		//delete[] dEArray_red;
 		
 		/*if(commRank == 0)
 		{
@@ -1316,50 +1395,12 @@ int main(int argc, char** argv)
 			escape << ndot << "\n";
 			escape.close();
 		}*/
-		for(int i=0; i<nSize; i++)
-		{
-			if(isnan(FluxArray[i]))//CHECKXXX
-				printf("A -> NaN! node %d index %d\n", commRank, i);
-		}
+		
 		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 		if(commRank==0) {dT1=MPI_Wtime(); printf("1...\n");}
 		
-		// Calculate averages before looking at the background
-		memset(ndSum_loc, 0, 4*sizeof(double));
-		
-		for(int i=0; i<nSize; i++)
-		{
-			float xHI = x_NArray[i];
-			float xHeI = x_NArray[i + nSize];
-			
-			ndSum_loc[0] += xHI;
-			ndSum_loc[1] += xHeI;
-			
-			ndSum_loc[2] += DensArray[i]*xHI;
-			ndSum_loc[3] += DensArray[i]*xHeI;
-		}
-		
-		for(int i=0; i<4; i++)
-		{
-			ndSum_loc[i] /= nSize;
-		}
-		
-		MPI_CHECK( MPI_Allreduce(ndSum_loc, ndSum, 4, MPI_DOUBLE, MPI_SUM, commGridDom) );
-		for(int i=0; i<4; i++)
-		{
-			ndSum[i] = ndSum[i]/nDomain;
-		}
-		
-		if(commRank == 0)
-		{
-			for(int i=0; i<4; i++)
-			{
-				printf("ndSum[%d] = %e\t", i, ndSum[i]);
-			}
-			cout << endl;
-		}
-		
 		// 7. Calculate the background:
+		/*
 		if(commRank == 0)
 		{
 			//float z = redshift(fT);
@@ -1369,7 +1410,7 @@ int main(int argc, char** argv)
 			float dz = redshift(fTslice - fDt) - z;
 			
 			float nb = 2.43e-7*pow(1.+z,3.);
-			
+			// CHECKXXX
 			float xh = ndSum[2];
 			float xhe = ndSum[3];
 			
@@ -1408,29 +1449,92 @@ int main(int argc, char** argv)
 			//Background[0] /= 3.1536e13*fDt*2.43e-7*pow(1+z, 3);
 			//Background[1] /= 3.1536e13*fDt*2.43e-7*pow(1+z, 3);
 			
-			cout << "Background Check: " << Background[0] << "\t" << Background[1] << "\n";
-			cout << "Background Check: " << Background[2] << "\t" << Background[3] << "\n";
+			//cout << "Background Check: " << Background[0] << "\t" << Background[1] << "\n";
+			//cout << "Background Check: " << Background[2] << "\t" << Background[3] << "\n";
 			cout << "Background Check: " << Back_full[0] << "\t" << Back_full[1] << "\n";
-		}
-		//Background[0] = 0.0;
+		}*/
+		Background[0] = 0.0;
 		Background[1] = 0.0;
-		//Background[2] = 0.0;
+		Background[2] = 0.0;
 		Background[3] = 0.0;
 		
 		MPI_CHECK(MPI_Bcast(Background, 4, MPI_FLOAT, 0, MPI_COMM_WORLD));
 		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 		
 		// Determine the time step
-		float max_ddt[2] = {0};
-		float max_ddt_M[2] = {0};
-		dt_H(max_ddt, DensArray_dev, x_NArray_dev, FluxArray_dev, EArray, Background, BOX_SIZE, fA, domain);
-		//printf("TEST -> %e %e %e %e\n", DensArray[0], x_NArray[0], FluxArray[0], fA);
-		float fDtLoc;
+		float fDtLoc = fDtConst;
+		double local_dx[2], local_gam[2], local_rec[2];
+		double adapt_ratio[2] = {0, 0};
+
+		for(int i_adapt=0; i_adapt<10; i_adapt++)
+		{
+			float adapt_limit = 0.02, adapt_target=0.75*adapt_limit;//=0.015;
+			
+			// Adjust the time step first, as we always want to calculate the parameters last
+			if(adapt_ratio[0] > adapt_limit)
+			{
+				fDtLoc = fDtLoc*adapt_target/abs(adapt_ratio[0]);
+				//fDtLoc = fDtLoc/2;
+				if(commRank == 0)
+				{
+					printf("\tAdjusting by %e for dt = %e\n", adapt_target/abs(adapt_ratio[0]), fDtLoc);
+				}
+			}
+
+			memset(local_vars, 0, 6*sizeof(double));
+			
+			dt_H(local_vars, fDtLoc, DensArray_dev, x_NArray_dev, FluxArray_dev, EArray, Background, BOX_SIZE, fA, domain);
+			
+			//MPI_CHECK(MPI_Allreduce(local_vars, local_vars_red, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD));
+			MPI_CHECK(MPI_Allreduce(local_vars, local_vars_red, 6, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+			//MPI_CHECK(MPI_Allreduce(local_vars+2, local_vars_red+2, 4, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+
+			for(int nSpe=0; nSpe<SPECIES; nSpe++)
+			{
+				local_dx[nSpe] = local_vars_red[3*nSpe + 0]/dAverageGridDensity/pow(DIMX,3);
+				local_gam[nSpe] = local_vars_red[3*nSpe + 1]*fDtLoc*1.e6*3.15569e7/dAverageGridDensity/pow(DIMX,3);
+				local_rec[nSpe] = local_vars_red[3*nSpe + 2]*fDtLoc*1.e6*3.15569e7/dAverageGridDensity/pow(DIMX,3);
+				//local_ratio = local_vars_red[3]/pow(DIMX,3);
+			}
+
+			for(int nSpe=0; nSpe<SPECIES; nSpe++)
+			{
+				adapt_ratio[nSpe] = 1.0 - (local_dx[nSpe] + local_rec[nSpe])/local_gam[nSpe];
+			}
+
+			if(commRank == 0)
+				printf("Ratio %e, %e\n", adapt_ratio[0], adapt_ratio[1]);
+			
+			// Stop loop if not doing adaptive dt
+			if(nStepType != 3)
+			{
+				break;
+			}
+			// Stop loop if below the threshold
+			if(adapt_ratio[0] <= adapt_limit)
+			{
+				break;
+			}
+			// Stop loop if there's nothing to adapt
+			if(isnan(adapt_ratio[0]))
+			{
+				break;
+			}
+		}
+		/*if(commRank == 0)
+		{
+			printf("\nTime: %e\n", fT);
+			printf("Ionized Change: %e\n", local_dx);
+			printf("Gamma: %e\n", local_gam);
+			printf("Recombinations: %e\n", local_rec);
+			printf("Ratio: %e\n", adapt_ratio);
+			printf("Timestep = %e\n", fDtLoc);
+			printf("Local Ratio: %e\n\n\n", local_ratio);
+		}*/
 		
-		MPI_CHECK(MPI_Allreduce(max_ddt, max_ddt_M, 2, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD));
-		
-		float fDt_H = 0.1/3.154e13/max_ddt_M[0];
-		float fDt_I = 100.0/3.154e13/max_ddt_M[1];
+		float fDt_H = 0.1/3.154e13/local_vars_red[0];
+		float fDt_I = 100.0/3.154e13/local_vars_red[1];
+
 		if(nStepType == 1)
 		{
 			float dtnew = fDt_H;
@@ -1443,9 +1547,11 @@ int main(int argc, char** argv)
 			fDtLoc = MIN(2.0*fDt, dtnew);
 			//fDtLoc = MIN(fDt, 1.e0);
 		}
-		else
+
+		// Variable constant time step
+		if(fT < 5*fDtConst)
 		{
-			fDtLoc = fDtConst;
+			//fDtLoc = fDtLoc/10;
 		}
 		
 		// We need the shortest time step for every sub-volume
@@ -1455,11 +1561,47 @@ int main(int argc, char** argv)
 		// Ensure that the time step can't be larger than the time between file outputs
 		fDt = MIN(fDtLoc, fDtFile);
 		if(commRank==0) {printf("dt = %e\tdt_H = %e\tdt_I = %e\t\n", fDt, fDt_H, fDt_I);}
-		//if(commRank==0) {printf("dt = %e\tdt_H = %e\tdt_I = %e\t\n", fDt, max_ddt[0], max_ddt[1]);}
+
+		// Background adjustment CHECKXX
+		double escaped_adjustment = 1.0;
+		if(true)
+		{
+			double fJet = 1.0;
+			double TOTAL_SOURCE = ndot*dAverageGridDensity*pow((float) BOX_SIZE,3.0)*3.086e24*fJet;
+			double emitted = (TOTAL_SOURCE)*pow(3.086e24,2);
+			emitted *= fDt*1.0e6*3.154e7;				// multiply by time step
+			emitted /= dAverageGridDensity*pow(BOX_SIZE*3.086e24,3);	// divide by number of atoms
+			emitted *= flux_adjustment_current;
+
+			escaped_adjustment = emitted/((1-Y_P)*local_gam[0] + Y_P*local_gam[1]/4.0);
+			
+			
+			if(commRank == 0)
+			{
+				printf("Escaped adjustment = %e\n", escaped_adjustment);
+			}
+
+			if(true)
+			{
+				MPI_CHECK(MPI_Bcast(&escaped_adjustment, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD));
+				printf("Escaped adjustments = %e\t%e\t%e\n", escaped_adjustment,
+															 escaped_adjustment + (escaped_adjustment-1.0)/(MAX(0.9, ndSum[2]+1.e-2)),
+															 escaped_adjustment + (escaped_adjustment-1.0)/(MAX(0.9, ndSum[3]+1.e-2)) );
+
+				CUDA_CHECK( cudaMemcpy(	FluxArray, FluxArray_dev, nSizeBytes*SPECIES, cudaMemcpyDeviceToHost) );
+				for(int i=0; i<SPECIES*nSize; i++)
+				{
+					//FluxArray[i] += (error)/(1-x_HII);
+					FluxArray[i] *= escaped_adjustment + (escaped_adjustment-1.0)/(MAX(0.9, ndSum[2]+1.e-2));
+					//FluxArray[i] *= 1.10;
+				}
+				CUDA_CHECK( cudaMemcpy(FluxArray_dev, FluxArray, nSizeBytes*SPECIES, cudaMemcpyHostToDevice) );
+			}
+		}
 		
 		// Perform chemistry calculation
-		float temp = 0;
-		ion(DensArray_dev, x_NArray_dev, FluxArray_dev, EArray, dEArray_dev, Background, &fDt, &temp, fA, domain);
+		error_loc = 0;
+		ion(DensArray_dev, x_NArray_dev, FluxArray_dev, EArray, dEArray_dev, Background, &fDt, &error_loc, fA, domain);
 		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 		
 		// Copy fraction and temperature arrays off the devices
@@ -1467,8 +1609,161 @@ int main(int argc, char** argv)
 								nSizeBytes*SPECIES, cudaMemcpyDeviceToHost) );
 		//CUDA_CHECK( cudaMemcpy(	EArray, EArray_dev,
 		//						nSizeBytes*SPECIES, cudaMemcpyDeviceToHost) );
+		// Background adjustment CHECKXX
+		/*for(int i=0; i<SPECIES*nSize; i++)
+		{
+			x_NArray[i] /= escaped_adjustment;
+		}*/
+		
+		// Calculate averages before looking at the background
+		// ndSum[i]:
+		// 0, 1: xHI, xHeI
+		// 2, 3: nHI, nHeI
+		memset(ndSum_loc, 0, 8*sizeof(double));
+		copy(ndSum, ndSum+8, ndSum_old);
+		double temp = 10;
+		for(int i=0; i<nSize; i++)
+		{
+			double xHI = x_NArray[i];
+			double xHeI = x_NArray[i + nSize];
+			
+			ndSum_loc[0] += xHI;
+			ndSum_loc[1] += xHeI;
+			
+			ndSum_loc[2] += DensArray[i]*xHI;
+			ndSum_loc[3] += DensArray[i]*xHeI;
+			
+			//ndSum_loc[1] += FluxArray[i];
+			//if(FluxArray[i] > temp){temp = FluxArray[i];}
+			ndSum_loc[4] += FluxArray[i];
+			ndSum_loc[5] += FluxArray[i]*DensArray[i];
+
+			ndSum_loc[6] += EArray[i];
+			ndSum_loc[7] += EArray[i]*DensArray[i];
+			//ndSum_loc[6] += dEArray_red[i];
+			//ndSum_loc[7] += dEArray_red[i]*DensArray[i];
+		}
+		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
+		//printf("ndSum_loc of rank (%d) = %e\n", commRank, ndSum_loc[2]);
+		//ndSum_loc[1] = temp;
+		delete[] dEArray_red;
+		for(int i=0; i<8; i++)
+		{
+			ndSum_loc[i] /= nSize;
+		}
+		MPI_CHECK( MPI_Allreduce(ndSum_loc, ndSum, 8, MPI_DOUBLE, MPI_SUM, commGridDom) );
+		for(int i=0; i<8; i++)
+		{
+			ndSum[i] = ndSum[i]/nDomain;
+		}
+		
 		// Output the temperature for testing
-		//if(commRank==0) {printf("Max RKCK error = %e\n", temp);}
+		double dError, dError_loc = (double) error_loc;
+		MPI_CHECK( MPI_Allreduce(&dError_loc, &dError, 1, MPI_DOUBLE, MPI_SUM, commGridDom) );
+		if(commRank == 0)
+		{
+			printf("Summed test variable = %e\n", dError);
+			
+			printf("ndSum (old) = ");
+			for(int i=0; i<8; i++)
+			{
+				printf("%0.3e, ", ndSum_old[i]);
+			}
+			printf("\n");
+			printf("ndSum (new) = ");
+			for(int i=0; i<8; i++)
+			{
+				printf("%0.3e, ", ndSum[i]);
+			}
+			printf("\n");
+		}
+		
+		if(commRank==0)
+		{
+			float fDtMyr = fDt*3.15569e7;
+			// Change in neutral fraction:
+			// volume weighted
+			//double x_HII = 1.0 - ndSum[0];
+			//double dx_HII = -(ndSum[0] - ndSum_old[0]);
+			double ionized[2];
+			for(int nSpe=0; nSpe<SPECIES; nSpe++)
+			{
+				ionized[nSpe] = 1 - ndSum[2+nSpe]/dAverageGridDensity;
+			}
+
+			// Emitted photons
+			double fJet = 1.0;
+			double TOTAL_SOURCE = ndot*dAverageGridDensity*pow((float) BOX_SIZE,3.0)*3.086e24*fJet;
+			//double TOTAL_SOURCE = SINGLE_SOURCE;
+			double emitted = (TOTAL_SOURCE)*pow(3.086e24,2);
+			emitted *= fDt*1.0e6*3.154e7;				// multiply by time step
+			emitted /= dAverageGridDensity*pow(BOX_SIZE*3.086e24,3);	// divide by number of atoms
+			emitted *= flux_adjustment_current;
+
+			// Escaped photons
+			double escaped = 0;
+			for(int nBin=0; nBin<FREQ_BIN_NUM; nBin++)
+			{
+				escaped += nfSback_red[nBin];
+			}
+			escaped *= pow(3.086e24,2);
+			escaped *= fDt*1.0e6*3.154e7;
+			escaped /= dAverageGridDensity*pow(BOX_SIZE*3.086e24,3);
+			//escaped	/= powf(BOX_SIZE/DIMX,3)*3.086e24;	// Unit correction
+			//escaped	/= 3.086e24;	// Unit correction
+			//escaped	*= fDt*1.0e6*3.154e7/dAverageGridDensity;
+
+			// Cumulative
+			emitted_total += emitted;
+			for(int nSpe=0; nSpe<SPECIES; nSpe++)
+			{
+				gamma_total[nSpe] += local_gam[nSpe];
+				recombined_total[nSpe] += local_rec[nSpe];
+			}
+
+			double ratio_gamma = 1 - ((1-Y_P)*local_gam[0] + Y_P*local_gam[1]/4.0)/(emitted-escaped);
+			
+			printf("Time: %e\n", fT);
+			printf("Emissions: %e (%e escaped)\n", emitted, escaped);
+			printf("Ionized Change: %e, %e\n", local_dx[0], local_dx[1]);
+			printf("Gamma: %e, %e\n", local_gam[0], local_gam[1]);
+			printf("Recombinations: %e, %e\n", local_rec[0], local_rec[1]);
+			printf("Ratio: %e, %e\n", adapt_ratio[0], adapt_ratio[1]);
+			printf("Gamma Ratios:\t%e\t%e\n\n", ratio_gamma, escaped/(emitted-local_gam[0]));
+			
+			printf("Background:");
+			for(int nBin=0;nBin<FREQ_BIN_NUM;nBin++)
+			{
+				printf("%e\t", nfSback_red[nBin]);
+			}
+			printf("\n");
+			
+			printf("Array check: %f\n\n", ratio_gamma);
+			
+			conservation.open("../dat/conservation.dat", ios::app);
+			conservation << scientific;
+			conservation.precision(3);
+			conservation << fT << "\t";
+			conservation << emitted/fDtMyr << "\t";
+			for(int nSpe=0; nSpe<SPECIES; nSpe++)
+			{
+				conservation << local_dx[nSpe]/fDtMyr << "\t";
+				conservation << local_gam[nSpe]/fDtMyr << "\t";
+				conservation << local_rec[nSpe]/fDtMyr << "\t";
+				conservation << adapt_ratio[nSpe] << "\t";
+			}
+			conservation << emitted_total << "\t";
+			for(int nSpe=0; nSpe<SPECIES; nSpe++)
+			{
+				conservation << ionized[nSpe] << "\t";
+				conservation << gamma_total[nSpe] << "\t";
+				conservation << recombined_total[nSpe] << "\t";
+			}
+			conservation << ratio_gamma << "\t";
+			conservation << escaped << "\t";
+			conservation << fDt << endl;
+			conservation.close();
+		}
 		
 		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
 		if(commRank==0) {dT2=MPI_Wtime(); printf("2...\n");}
@@ -1538,7 +1833,10 @@ int main(int argc, char** argv)
 					FILE *re;
 					re = fopen(name, "w");
 					fprintf(re, "%d\t%d\t%d\t", counter, step, iFileNum);
-					fprintf(re, "%e\t%e\t%e\t%e", fT, fDt, fTFile, fDtFile);
+					fprintf(re, "%e\t%e\t%e\t%e\t", fT, fDt, fTFile, fDtFile);
+					fprintf(re, "%e\t", emitted_total);
+					fprintf(re, "%e\t%e\t", gamma_total[0], recombined_total[0]);
+					fprintf(re, "%e\t%e", gamma_total[1], recombined_total[1]);
 					fclose(re);
 				}
 				if(commRank == 0)
@@ -1563,8 +1861,9 @@ int main(int argc, char** argv)
 				double ne_i = DensArray[ind]*xe_i;
 				
 				double T = EArray[ind]/((3./2.)*8.6173303e-5)/(1.0+xe_i);
-				double alpha;
-				if(T < 1.e0)
+				double alpha = recombination_HII(T, 1);
+				
+				/*if(T < 1.e0)
 				{
 					alpha = 2.17e-10;
 				}
@@ -1577,7 +1876,7 @@ int main(int argc, char** argv)
 				{
 					alpha = 4.36e-10*powf(T,-0.7573);
 					//al[1] = 1.50e-10*powf(T,-0.6353);
-				}
+				}*/
 				
 				double rec_i = alpha*(1.0-x_NArray[ind])*ne_i;
 				
@@ -1591,6 +1890,8 @@ int main(int argc, char** argv)
 				
 				ndOut[7] += rec_i;
 				ndOut[8]+= rec_i*DensArray[ind];
+
+				ndOut[9] += DensArray[ind];
 				
 				ndOut[10] += T;
 				ndOut[11] += T*DensArray[ind];
@@ -1599,7 +1900,7 @@ int main(int argc, char** argv)
 			int massW[5] = {2, 3, 6, 8, 11};
 			for(int i=0; i<5; i++)
 			{
-				ndOut[massW[i]] /= 2.43e-7;
+				ndOut[massW[i]] /= dAverageGridDensity;
 			}
 			
 			// Outputs for collisional ionization
@@ -1620,22 +1921,21 @@ int main(int argc, char** argv)
 			for(int i=0; i<nSize; i++)
 			{
 				if(FluxArray[i] > A0)
-					A0 = FluxArray[i];
+					A0 += FluxArray[i];
 				if(EArray[i] > A1)
-					A1 = EArray[i];
-				if(isnan(FluxArray[i]))
-					printf("B -> NaN! node %d index %d\n", commRank, i);
+					A1 += EArray[i];
 			}
-			printf("x = %e, F = %e, E = %e\n", x_NArray[0], A0, A1);
+			
 			//Troubleshooting
+			//printf("ID = %d, F = %e, E = %e\n", domain.get_id(), A0/nSize, A1/nSize);
 			//float ndotphys = ndot*pow(nfA[iFileNum],-3.0); // CHECKXXX
 			
 			ndOut[0] = fT;
 			ndOut[4] = ndot;
-			ndOut[9] = Background[0]/fDt;
+			//ndOut[9] = Background[0]/fDt;
 			
-			ndOut[12] = 1.0/3.15e13/max_ddt_M[0];
-			ndOut[13] = 1.0/3.15e13/max_ddt_M[1];
+			ndOut[12] = 1.0/3.15e13/local_vars_red[0];
+			ndOut[13] = 1.0/3.15e13/local_vars_red[1];
 			
 			if(commRank == 0)
 			{
@@ -1740,6 +2040,7 @@ int main(int argc, char** argv)
 		if(commRank==0) printf("Step #%d, rad step: %f, ion step: %f\n", step, dT1-dT0, dT2-dT1);
 		
 		fT+=fDt;
+		//return 0;
 		/*if(commRank != -1)
 		{
 			float AA=0, BB=0;
@@ -1757,7 +2058,7 @@ int main(int argc, char** argv)
 	CUDA_CHECK( cudaFree(FluxArray_dev) );
 	CUDA_CHECK( cudaFree(source_dev));
 	
-	CUDA_CHECK( cudaThreadExit() );
+	CUDA_CHECK( cudaDeviceReset() );
 	
 	delete[] particles;
 	delete[] Nuback;
@@ -1857,6 +2158,24 @@ inline void BinGridRead(float* array, char* filename, int dim)
 	ifsFile.close();
 }
 
+inline void BinGridRead_double(float* array, char* filename, int dim)
+{
+	ifstream ifsFile (filename, ios::in | ios::binary);
+	ifsFile.seekg (0, ios::beg);
+	
+	unsigned long int num = dim*dim*dim;
+	
+	for (unsigned long int i = 0; i < num; i++)
+	{
+		double buff;
+		
+		ifsFile.read((char*)&buff, sizeof(double));
+		array[i] = float(buff);
+	}
+	
+	ifsFile.close();
+}
+
 // Shut down MPI cleanly if something goes wrong
 void my_abort(int err)
 {
@@ -1921,4 +2240,27 @@ double model_alpha(double z, unsigned mod)
 	if(mod == 1)	{return -1.80 - 0.04*(z - 6.);}
 	else if(mod == 2)	{return -1.88 - 0.08*(z - 6.);}
 	return -1.84 - 0.06*(z - 6.);
+}
+
+double recombination_HII(double _t, int _case)
+{
+	double TTR_HI = 157807.0;
+	double TTR_HeI = 285335.0;
+	double TTR_HeII = 631515.0;
+	double ERG_TO_EV = 6.242e11;
+	
+	double _a;
+	double lam = 2.0*TTR_HI/_t;
+	
+	// Case A
+	if(_case == 0)
+	{
+		_a = 1.269e-13*powf(lam, 1.503)/powf(1.0 + powf(lam/0.522, 0.470), 1.923);
+	}
+	else
+	{
+		_a = 2.753e-14*powf(lam, 1.500)/powf(1.0 + powf(lam/2.740, 0.407), 2.242);
+	}
+	
+	return _a;
 }

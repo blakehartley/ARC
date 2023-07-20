@@ -17,10 +17,10 @@ typedef struct Ray
 	// Domain in which the ray is located
 	int DOM;
 	
-	float R = 0.0;
+	float R;
 	float position[3];
 	int gridloc[3];
-	float flux[FREQ_NUM];
+	float tau[FREQ_NUM];
 	
 	// Constructor.
 	CUDA_CALLABLE_MEMBER Ray();
@@ -32,7 +32,7 @@ typedef struct Ray
 		int Nside2 = 1 << (2*ord);
 		if(p<0 || p>=12*Nside2)
 		{
-			printf("Invalid ray pixel: p=%d, ord=%d, DOM=%d, R=%d\n", p, ord, DOM, 12*Nside2);
+			printf("Invalid ray pixel: p=%d, ord=%d, DOM=%d, R=%f\n", p, ord, DOM, R);
 			//printf("Invalid ray pixel: p=%d, ord=%d\n", p, ord);
 		}
 		UID = p + 4*Nside2;
@@ -42,16 +42,8 @@ typedef struct Ray
 	CUDA_CALLABLE_MEMBER void get_pix(int* pout, int* ordout)
 	{
 		int ord = (int) log2((float) (UID/4))/2;
-		
 		//int p = UID - 4*pow(4, ord);
 		int p = UID - 4*(1 << 2*ord);
-		// Handles a floating point error in the above calculation, didn't see an obvious better way.
-		if(p < 0)
-		{
-			ord = ord - 1;
-			p = UID - 4*(1 << 2*ord);
-			//printf("Floating point error in UID -> ord, adjsting: UID %d, ord %d, p %d\n", UID, ord, p);
-		}
 		*pout = p;
 		*ordout = ord;
 	}
@@ -60,15 +52,6 @@ typedef struct Ray
 	CUDA_CALLABLE_MEMBER int get_Nside()
 	{
 		int ord = (int) log2((float) (UID/4))/2;
-
-		// Handles a floating point error in the above calculation, didn't see an obvious better way.
-		int p = UID - 4*(1 << 2*ord);
-		if(p < 0)
-		{
-			ord = ord - 1;
-			p = UID - 4*(1 << 2*ord);
-			//printf("Floating point error in UID -> Nside, adjsting: UID %d, ord %d, p %d\n", UID, ord, p);
-		}
 		return (1 << ord);
 	}
 	
@@ -93,7 +76,14 @@ typedef struct Ray
 		
 		for(int i=0; i<3; i++)
 		{
-			gridloc[i] = static_cast<int>(position[i]);
+			if(vec[i] >= 0)
+			{
+				gridloc[i] = static_cast<int>(position[i]);
+			}
+			else
+			{
+				gridloc[i] = static_cast<int>(position[i]);
+			}
 		}
 		/*gridloc[0] = int(position[0]);
 		gridloc[1] = int(position[1]);
@@ -110,15 +100,6 @@ typedef struct Ray
 	CUDA_CALLABLE_MEMBER int get_dom()
 	{
 		return DOM;
-	}
-	
-	// Set ray flux
-	CUDA_CALLABLE_MEMBER void set_flux(float * flux_init)
-	{
-		for(int nBin=0; nBin<FREQ_NUM; nBin++)
-		{
-			flux[nBin] = flux_init[nBin];
-		}
 	}
 	
 	CUDA_CALLABLE_MEMBER void copy_ray(Ray ray0)
@@ -143,7 +124,7 @@ typedef struct Ray
 		
 		for(int nBin=0; nBin<FREQ_NUM; nBin++)
 		{
-			flux[nBin] = ray0.flux[nBin];
+			tau[nBin] = ray0.tau[nBin];
 		}
 	}
 } Ray;
@@ -164,6 +145,6 @@ CUDA_CALLABLE_MEMBER Ray :: Ray()
 	
 	for(int bin=0; bin<FREQ_NUM; bin++)
 	{
-		flux[bin] = 0.0;
+		tau[bin] = 0.0;
 	}
 }

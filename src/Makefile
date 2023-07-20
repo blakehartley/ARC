@@ -26,22 +26,36 @@
 
 # This Makefile was modified for use in the compiling of ARC by Blake Teixeira Hartley.
 
-# bluecrab variables (not sure what is best here):
-MPI_HOME = /software/apps/mpi/openmpi/3.1.3a1
+#CUDA_INSTALL_PATH = $(CUDA_PATH)
 
-CUDA_PATH = /software/apps/cuda/9.2/
-CUDA_INCDIR = /software/apps/cuda/9.2/include
-CUDA_LIB64DIR = /software/apps/cuda/9.2/lib64
+# bluecrab variables (not sure what is best here):
+#MPI_HOME = /opt/openmpi-gcc/1.6.5
+#MPI_HOME = /cell_root/software/openmpi/1.8.6/gnu/4.8.1/threaded/sys
+#MPI_HOME = /cm/shared/apps/Intel/openmpi/1.8.6
+
+#CUDA_PATH = /usr/local/cuda
+CUDA_PATH = /cvmfs/hpcsw.umd.edu/spack-software/2022.06.15/linux-rhel8-zen2/gcc-9.4.0/cuda-11.6.2-eonihhhvlh4s2d6riyb7al2qivzn477u
+#CUDA_PATH = /cell_root/software/cuda/7.5.18/sys
+#CUDA_PATH = /cm/shared/apps/cuda/7.5
+
+CUDA_INCDIR = $(CUDA_PATH)/include
+CUDA_LIB64DIR = $(CUDA_PATH)/lib64
+
+#CUDA_PATH = $(PATH)
+#CIDA_INCDIR = $(INCLUDE)
+#CIDA_LIB64DIR = $(LD_LIBRARY_PATH)
 
 # Compilers
 MPICC=$(PREP) mpicc
 MPILD=$(PREP) mpic++
-NVCC=$(PREP) nvcc
+#NVCC=$(PREP) nvcc
+#NVCC=$(PREP) /usr/local/cuda/bin/nvcc
+NVCC = $(CUDA_PATH)/bin/nvcc
 
 # Flags
 CFLAGS = -std=c99 -O3 -march=native -Wall
 CFLAGS += -I$(CUDA_INCDIR)
-#CFLAGS += -L/etc/glue/nvidia/lib64 -Wl,-rpath,/etc/glue/nvidia/lib64 -lcudart
+CFLAGS += -L/etc/glue/nvidia/lib64 -Wl,-rpath,/etc/glue/nvidia/lib64 -lcudart
 
 LDFLAGS = -L$(CUDA_LIB64DIR) -Wl,-rpath,$(CUDA_LIB64DIR) -lcudart
 #LDFLAGS += -L/etc/glue/nvidia/lib64 -Wl,-rpath,/etc/glue/nvidia/lib64
@@ -51,20 +65,20 @@ CUDACFLAGS=-I${CUDA_INCDIR}
 
 #CUDACFLAGS=-I${CUDA_INSTALL_PATH}/include
 
-GENCODE_SM30    := -gencode arch=compute_30,code=sm_30
-GENCODE_SM35    := -gencode arch=compute_35,code=sm_35
-GENCODE_SM35    := -gencode arch=compute_37,code=sm_37
-GENCODE_SM50    := -gencode arch=compute_50,code=sm_50
+#GENCODE_SM13    := -gencode arch=compute_13,code=sm_13
+#GENCODE_SM20    := -gencode arch=compute_20,code=sm_20
+#GENCODE_SM30    := -gencode arch=compute_30,code=sm_30
+##GENCODE_SM35    := -gencode arch=compute_35,code=sm_35
 #GENCODE_SM52    := -gencode arch=compute_52,code=\"sm_52,compute_52\"
-GENCODE_FLAGS   := $(GENCODE_SM30) $(GENCODE_SM35) $(GENCODE_SM37) $(GENCODE_SM50)
-#$(GENCODE_SM52)
+#GENCODE_FLAGS   := $(GENCODE_SM35) $(GENCODE_SM37) $(GENCODE_SM50) $(GENCODE_SM52)
 
-NVCCFLAGS=-O3 $(GENCODE_FLAGS) -Xcompiler -march=native
+#NVCCFLAGS=-O3 $(GENCODE_FLAGS) -Xcompiler -march=native
+NVCCFLAGS=-O3 -arch=sm_61 -Xcompiler -march=native
 
 CUDALDFLAGS := -L${CUDA_INCDIR}/lib64 -lcudart
 
 # Description of binaries
-BINDIR=./bin
+BINDIR=../bin
 ARC=$(BINDIR)/arc
 BINARIES=$(ARC)
 
@@ -78,21 +92,26 @@ test:
 	@echo $(CFLAGS)
 	@echo $(LDFLAGS)
 
-dev.o: ./src/arc.h ./src/arc_dev.cu Makefile
-	$(NVCC) $(MPICFLAGS) $(NVCCFLAGS) -c ./src/arc_dev.cu -o ./src/dev.o
+dev.o: arc.h arc_dev.cu Makefile
+	$(NVCC) $(MPICFLAGS) $(NVCCFLAGS) -c arc_dev.cu -o dev.o
 
-host.o: ./src/arc.h ./src/arc_host.cpp Makefile
-	$(MPILD) $(LDFLAGS) $(CFLAGS) -c ./src/arc_host.cpp -o ./src/host.o
+host.o: arc.h arc_host.cpp Makefile
+	$(MPILD) $(LDFLAGS) $(CFLAGS) -c arc_host.cpp -o host.o
 	
 $(ARC): dev.o host.o Makefile
 	mkdir -p $(BINDIR)
-	$(MPILD) $(LDFLAGS) -o $(ARC) ./src/dev.o ./src/host.o 
+	$(MPILD) $(LDFLAGS) -o $(ARC) dev.o host.o
+
+halo_calc: arc.h halo_calc.cpp Makefile
+	g++ -c halo_calc.cpp -o halo_calc
+
+#$(MPILD) $(LDFLAGS) $(CFLAGS) -c halo_calc.cpp -o halo_calc
+
+doc: CUDA_Normal_MPI.c CUDA_Aware_MPI.c Device.cu Host.c Input.c Makefile Jacobi.c Jacobi.h Jacobi.doxygen
+	doxygen Jacobi.doxygen
 	
 clean:
-	rm -rf ./src/*.o ./src/*~ ./src/inc/*~ $(BINARIES)
+	rm -rf *.o *~ $(BINARIES)
 
 cleandat:
-	rm -rf ./dat/hydrogen/* ./dat/helium/* ./dat/photons/* ./dat/background/*
-
-makedir:
-	mkdir ./dat/ ./dat/hydrogen ./dat/helium ./dat/photons/ ./dat/background/ ./bin/
+	rm -rf ../dat/hydrogen/* ../dat/helium/* ../dat/photons/*
