@@ -1,0 +1,16 @@
+#!/bin/bash
+
+nvcc_loc=$(which nvcc)
+cuda_loc=`echo $nvcc_loc | sed -e "s#/bin/nvcc##"`
+echo "CUDA location:"
+echo "$cuda_loc"
+
+sed -i "s#^CUDA_PATH.*#CUDA_PATH = $cuda_loc#g" ./src/Makefile
+#echo "file is at $cuda_loc"
+
+#read nvcc_loc
+
+#echo "Hi $nvcc_loc"
+
+#sed -i '' "
+

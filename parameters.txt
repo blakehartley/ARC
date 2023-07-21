@@ -1,6 +1,6 @@
-/home/bth/scratch/			# Location of nanoJubilee/Reduced/ Directory
+hello
 0						# Model (0 for continuous, 1 for Bursty)
-3						# Step Type (1 for dnHdt, 2 for dIdt, 0 for constant)
+3						# Step Type (0 constant, 1 dnHdt, 2 dIdt, 3 % conservation)
 1.000					# Time step (for step type 0)
 910.001						# Number of Myr to run the sim
 415						# Output file number to start on
