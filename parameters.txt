@@ -1,4 +1,4 @@
-hello
+/scratch/zt1/project/ricotti-prj/shared/ # Location of nanoJubilee/ Directory
 0						# Model (0 for continuous, 1 for Bursty)
 3						# Step Type (0 constant, 1 dnHdt, 2 dIdt, 3 % conservation)
 1.000					# Time step (for step type 0)
