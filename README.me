@@ -9,21 +9,30 @@
    ARC: adaptive ray-tracing with CUDA, a new ray tracing code for parallel GPUs
    https://arxiv.org/pdf/1807.07094.pdf
 
-1. Configure
+1. Begin by cloning this repository:
 
-   Begin by placing this folder where you want to do your runs. Once you are sure that openMPI and CUDA are installed and/or loaded, run the './configure' script in this directory. This will update the Makefile for the code to look for the correct installation files.
+   > git clone https://github.com/blakehartley/ARC
 
-2. Compile
+2. Make sure that you have versions of openMPI and CUDA which are mutually compatible installed/loaded. On a supercomputer (e.g. Zaratan at UMD), this is accomplished with:
 
-   ARC uses a Makefile located in the './src/' directory for the managing the directory structure and compiling of the code. The following codes may be used as desired in the './src/':
+   > module unload <unwanted modules>
+   >
+   > module load openmpi cuda
 
-   'make' - This will compile the code, creating the necessary object files and binary, which is located in the directory './bin/'.
+   HPC managers will typically ensure that the default versions of these modules are mutually compatible.
 
-   'makedir' - This will create the necessary file structure, if necessary
+3. Once you are sure that openMPI and CUDA are installed and/or loaded, the Makefile for ARC needs to be updated for the location of CUDA include files. This is accomplished using:
 
-   'cleandat' - This will clean out the data folders entirely. It is ideal for cleaning up unnecessary work.
+   > './configure'
 
-3. Initialize
+4. ARC uses a Makefile located in the './src/' directory for the managing the directory structure and compiling of the code. Navigate to this folder with `cd src`. The following codes may be used as desired in the folder './src/':
+
+   - 'make' - This will compile the code, creating the necessary object files and binary, which is located in the directory './bin/'.
+   - 'make clean' - This will remove intermediate compilation files. It should be used if you want to make a change to any source code file besides arc_host.cpp.
+
+   - 'make cleandat' - This will clean out the data folders entirely. It is ideal for cleaning up unnecessary work.
+
+5. Initialize
 
    Before the code may be run, several parameters should be inspected and changed, as desired. These parameters are located in two places:
 
@@ -33,13 +42,13 @@
 
    In general, 'parameters.txt' should be the only one that requires a change, and the code should run once the grid and halos are correctly pointed to.
 
-4. The current version of the code is designed to be run on a multiple of 8 parallel GPUs, using MPI and CUDA. The code is run with a command such as the following:
+6. The current version of the code is designed to be run on a multiple of 8 parallel GPUs, using MPI and CUDA. The code is run with a command such as the following:
 
    mpirun -n 8x ./bin/arc
 
    where x is some integer, as desired. An example of the type of SLURM script used for running the code is included in './run.csh'. This script is one that I have used to run it on both UMD's Deepthought2 and JHU's Bluecrab. It is possible to run the code on a smaller or larger number, or non-multiple of 8, and MPI will take care of over/underloading GPU's as necessary. However, an integer multiple of 8 will ensure optimal saturation of computational resources (i.e. at 15 nodes, the final 16th sub-volume will take its own computational cycle, making the whole code hang up).
 
-5. Code outputs
+7. Code outputs
 
    The outputs of the code are stored in the './dat/' folder. The code produces the following outputs:
 
@@ -53,7 +62,7 @@
 
    './dat/restart/' - 
 
-6. Contact the author
+8. Contact the author
 
    I may be contacted at blakehartley@gmail.com for any questions regarding this code.
 
