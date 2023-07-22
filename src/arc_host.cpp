@@ -1371,7 +1371,7 @@ int main(int argc, char** argv)
 		{
 			for(int i=0; i<nSize; i++)
 			{
-				FluxArray_red[i + nSpe*nSize] *= flux_adjustment_current;
+				//FluxArray_red[i + nSpe*nSize] *= flux_adjustment_current;
 			}
 		}
 
@@ -1573,7 +1573,16 @@ int main(int argc, char** argv)
 			emitted /= dAverageGridDensity*pow(BOX_SIZE*3.086e24,3);	// divide by number of atoms
 			emitted *= flux_adjustment_current;
 
-			escaped_adjustment = emitted/((1-Y_P)*local_gam[0] + Y_P*local_gam[1]/4.0);
+			// Making sure that we don't divide by zero
+			double total_gamma = ((1-Y_P)*local_gam[0] + Y_P*local_gam[1]/4.0);
+			if(total_gamma > 1.e-10)
+			{
+				escaped_adjustment = emitted/total_gamma;
+			}
+			else
+			{
+				escaped_adjustment = 1.0;
+			}
 			
 			
 			if(commRank == 0)
