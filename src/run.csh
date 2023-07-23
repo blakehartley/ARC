@@ -17,8 +17,7 @@ date
 #module load gcc/8.4.0 openmpi/gcc/8.4.0 cuda/gcc/8.4.0
 module load openmpi cuda
 
-#cd /scratch/zt1/project/ricotti-prj/user/bth/MC64_C/src/
-cd /home/bth/scratch/MC256_c_200/src/
+cd /home/bth/scratch/MC256_c_200/src/ #source_loc
 
 #make clean
 #make

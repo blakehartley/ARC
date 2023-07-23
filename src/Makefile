@@ -114,4 +114,4 @@ clean:
 	rm -rf *.o *~ $(BINARIES)
 
 cleandat:
-	rm -rf ../dat/hydrogen/* ../dat/helium/* ../dat/photons/*
+	rm -rf ../dat/hydrogen/* ../dat/helium/*
