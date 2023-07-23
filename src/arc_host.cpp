@@ -1367,11 +1367,12 @@ int main(int argc, char** argv)
 		{
 			printf("Current flux adjustment = %e\n", flux_adjustment_current);
 		}
+		flux_adjustment_current = 1.0;
 		for(int nSpe=0; nSpe<SPECIES; nSpe++)
 		{
 			for(int i=0; i<nSize; i++)
 			{
-				//FluxArray_red[i + nSpe*nSize] *= flux_adjustment_current;
+				FluxArray_red[i + nSpe*nSize] *= flux_adjustment_current;
 			}
 		}
 

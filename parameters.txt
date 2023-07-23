@@ -1,9 +1,9 @@
-/scratch/zt1/project/ricotti-prj/shared/ # Location of nanoJubilee/ Directory
+/scratch/zt1/project/ricotti-prj/shared/	# Location of nanoJubilee/ Directory
 0						# Model (0 for continuous, 1 for Bursty)
 3						# Step Type (0 constant, 1 dnHdt, 2 dIdt, 3 % conservation)
 1.000					# Time step (for step type 0)
 910.001						# Number of Myr to run the sim
-415						# Output file number to start on
+0						# Output file number to start on
 2.00					# Myr between outputs
 0.400					# Escape fraction
 1.e8					# Minimum bursty halo mass
