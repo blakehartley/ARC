@@ -5,9 +5,13 @@ typedef struct source {
     float gam;
 } source;
 
+struct RayWorkspace;
+
 extern "C" {
 	void output(float*, float*, short*, float, int);
-	void rad(float*, float*, const source*, float*, float*, Ray*, int*, int*, float, float, double*, float*, Domain, float);
+	RayWorkspace* create_ray_workspace();
+	void destroy_ray_workspace(RayWorkspace*);
+	void rad(float*, float*, const source*, float*, float*, Ray*, int*, int*, float, float, double*, float*, Domain, float, RayWorkspace*);
 	void ion(float*, float*, float*, float*, float*, const float*, float*, float*, float, Domain);
 	void dt_H(double*, float, float*, float*, float*, float*, const float*, const float, const float, Domain);
 	void my_abort(int err);

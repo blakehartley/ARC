@@ -697,6 +697,9 @@ int main(int argc, char** argv)
 	float fDuty = 1.0;
 
 	float flux_adjustment = 1.0;
+	RayWorkspace *ray_workspace = 0;
+	Ray *SendBuf = 0;
+	Ray *RecvBuf = 0;
 	
 	float fTslice = time(1.0 / nfA[iFileNum] - 1.0);
 	//printf("Restart checkxx! 3 %e %e %d\n", fT, fTfinal, step);
@@ -901,20 +904,6 @@ int main(int argc, char** argv)
 						p_init[j].z = (Z/(BOX_SIZE*1.e3*HUBBLE))*DIMZ;
 						j++;
 					}
-					
-					/*if(!(iss >> X >> Y >> Z >> a))
-						break;
-					
-					//cout << ID << "\t" << mdm << endl;
-					if(niOnHalos[i] == 1)
-					{
-						p_init[j].gam = a;
-						p_init[j].x = X;
-						p_init[j].y = Y;
-						p_init[j].z = Z;
-						
-						j++;
-					}*///Test
 					
 					i++;
 					
@@ -1171,11 +1160,14 @@ int main(int argc, char** argv)
 
 		int nPartRem;
 		MPI_CHECK(MPI_Allreduce( (PartInfo+1), &nPartRem, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD));
+		if(nPartRem > 0 && !ray_workspace)
+		{
+			ray_workspace = create_ray_workspace();
+			SendBuf = new Ray[8*NUM_BUF];
+			RecvBuf = new Ray[8*NUM_BUF];
+		}
 		
-		// Create Ray buffers
-		// Size dictated by domain geometry
-		Ray *SendBuf = new Ray[8*NUM_BUF];
-		Ray *RecvBuf = new Ray[8*NUM_BUF];
+		// The exchange buffers are reused across radiation steps.
 		// Ray tracer decreases PartInfo[1] as it works through the particles
 
 		// Keeping track of the maximum memory usage for diagnostic purposes
@@ -1207,7 +1199,7 @@ int main(int argc, char** argv)
 			if(commRank==0) {dT0a=MPI_Wtime();}
 			
 			rad(	DensArray_dev, x_NArray_dev, source_dev, FluxArray_dev, dEArray_dev, SendBuf,
-					PartInfo, ndBuf, BOX_SIZE, fA, local_vars, nfSback, domain, fDt);
+					PartInfo, ndBuf, BOX_SIZE, fA, local_vars, nfSback, domain, fDt, ray_workspace);
 			
 			// CHECKING FOR ARRAY TROUBLES //
 			/*float check3[1]={0};
@@ -1313,7 +1305,7 @@ int main(int argc, char** argv)
 				
 				rad(	DensArray_dev, x_NArray_dev, source_dev, FluxArray_dev,
 						dEArray_dev, SendBuf, PartInfo, ndBuf,
-						BOX_SIZE, fA, local_vars, nfSback, domain, fDt);
+						BOX_SIZE, fA, local_vars, nfSback, domain, fDt, ray_workspace);
 				
 				MPI_CHECK(MPI_Allreduce(local_vars, local_vars_red, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD));
 				memset(local_vars, 0, 6*sizeof(double));
@@ -1336,9 +1328,6 @@ int main(int argc, char** argv)
 			MPI_CHECK(MPI_Allreduce( PartInfo+1, &nPartRem, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD));
 			//printf("nOnFinal = %d, PartInfo[0] = %d, PartInfo[1] = %d\n", nOnFinal, nPartRem, PartInfo[1]);
 		}
-		
-		delete[] SendBuf;
-		delete[] RecvBuf;
 		
 		printf("Peak GPU Memory: %f MB/ %f MB\n", cuda_memory[0]/1024/1024, cuda_memory[1]/1024/1024);
 
@@ -2063,6 +2052,10 @@ int main(int argc, char** argv)
 		}*/
 	}
 	
+	destroy_ray_workspace(ray_workspace);
+	delete[] SendBuf;
+	delete[] RecvBuf;
+
 	CUDA_CHECK( cudaFree(DensArray_dev) );
 	CUDA_CHECK( cudaFree(x_NArray_dev) );
 	CUDA_CHECK( cudaFree(FluxArray_dev) );

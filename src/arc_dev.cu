@@ -3,6 +3,8 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+#include <limits.h>
+#include <algorithm>
 
 #include <iostream>
 #include <fstream>
@@ -48,6 +50,57 @@ inline void gpuAssert_test(cudaError_t code, const char *file, int line, int var
    }
 }
 
+// The two dense arrays alternate between tracing and splitting. The outbound
+// array has a separate, fixed-size segment for each destination domain.
+struct RayWorkspace
+{
+	Ray *active, *next, *outbound, *host;
+	size_t active_capacity, next_capacity, host_capacity;
+	int *counts, *ray_count;
+	float *background;
+};
+
+static void ensure_device_rays(Ray *&rays, size_t &capacity, size_t needed)
+{
+	if(needed <= capacity) return;
+	size_t grown = std::max(needed, capacity ? capacity * 2 : needed);
+	CUDA_CHECK( cudaFree(rays) );
+	CUDA_CHECK( cudaMalloc((void **)&rays, grown * sizeof(Ray)) );
+	capacity = grown;
+}
+
+static void ensure_host_rays(RayWorkspace *workspace, size_t needed)
+{
+	if(needed <= workspace->host_capacity) return;
+	size_t grown = std::max(needed, workspace->host_capacity ? workspace->host_capacity * 2 : needed);
+	delete[] workspace->host;
+	workspace->host = new Ray[grown];
+	workspace->host_capacity = grown;
+}
+
+RayWorkspace* create_ray_workspace()
+{
+	RayWorkspace *workspace = new RayWorkspace{};
+	CUDA_CHECK( cudaMalloc((void **)&workspace->outbound, 8ull * NUM_BUF * sizeof(Ray)) );
+	CUDA_CHECK( cudaMalloc((void **)&workspace->counts, 8 * sizeof(int)) );
+	CUDA_CHECK( cudaMalloc((void **)&workspace->ray_count, sizeof(int)) );
+	CUDA_CHECK( cudaMalloc((void **)&workspace->background, FREQ_BIN_NUM * sizeof(float)) );
+	return workspace;
+}
+
+void destroy_ray_workspace(RayWorkspace *workspace)
+{
+	if(!workspace) return;
+	CUDA_CHECK( cudaFree(workspace->active) );
+	CUDA_CHECK( cudaFree(workspace->next) );
+	CUDA_CHECK( cudaFree(workspace->outbound) );
+	CUDA_CHECK( cudaFree(workspace->counts) );
+	CUDA_CHECK( cudaFree(workspace->ray_count) );
+	CUDA_CHECK( cudaFree(workspace->background) );
+	delete[] workspace->host;
+	delete workspace;
+}
+
 // Perform calculations to produce Flux arrays
 // DensArray	= Array of densities in cm^-3
 // x_NArray		= Array of neutral fractions
@@ -60,7 +113,8 @@ inline void gpuAssert_test(cudaError_t code, const char *file, int line, int var
 void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		float* FluxArray_dev, float* dEArray_dev, Ray* RayBuf, 
 		int* PartInfo, int* ndBuf, float L, float a,
-		double *local_vars, float* nfSback, Domain domain, float dt_ion)
+		double *local_vars, float* nfSback, Domain domain, float dt_ion,
+		RayWorkspace *workspace)
 {
 	int dim = domain.get_dim();
 	
@@ -116,14 +170,10 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	
 	size_t sizeR = sizeof(RayBuf[0]);
 	
-	int* NumBuf_dev;
-	CUDA_CHECK( cudaMalloc((void **)&NumBuf_dev, 8*sizeof(int)) );
-	Ray* RayBuf_dev;
-	CUDA_CHECK( cudaMalloc((void **)&RayBuf_dev, 8*NUM_BUF*sizeR) );
-	
-	float size3 = FREQ_BIN_NUM*sizeof(float);
-	float* nfSback_dev;
-	CUDA_CHECK( cudaMalloc((void **)&nfSback_dev, size3));
+	int* NumBuf_dev = workspace->counts;
+	Ray* RayBuf_dev = workspace->outbound;
+	size_t size3 = FREQ_BIN_NUM*sizeof(float);
+	float* nfSback_dev = workspace->background;
 	CUDA_CHECK( cudaMemcpy(nfSback_dev, nfSback, size3, cudaMemcpyHostToDevice) );
 	
 	CUDA_CHECK( cudaEventRecord( timeB, 0 ) );
@@ -133,8 +183,8 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	Ray *RayDat;
 	
 	// Pointers for the ray data
-	Ray *RayDat0_dev;
-	Ray *RayDat_dev;
+	Ray *&RayDat0_dev = workspace->active;
+	Ray *&RayDat_dev = workspace->next;
 	
 	// Tracing rays from the buffer
 	if(PartInfo[3] == 1)
@@ -142,19 +192,24 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		nRays0 = 0;
 		for(int i=0; i<8; i++)
 		{
+			if(ndBuf[i] < 0 || ndBuf[i] > NUM_BUF)
+			{
+				fprintf(stderr, "Invalid incoming ray count for domain %d: %d\n", i, ndBuf[i]);
+				abort();
+			}
 			nRays0 += ndBuf[i];
 		}
 		nRays = nRays0;
 		
-		RayDat = new Ray[nRays];
+		ensure_host_rays(workspace, nRays);
+		RayDat = workspace->host;
 		
 		int d_dat = 0;
 		int d_buf = 0;
 		for(int i=0; i<8; i++)
 		{
-			memcpy(	RayDat + d_dat,
-					RayBuf + d_buf,
-					ndBuf[i]*sizeR);
+			if(ndBuf[i] > 0)
+				memcpy(RayDat + d_dat, RayBuf + d_buf, ndBuf[i]*sizeR);
 			
 			// dev rays are listed together
 			d_dat += ndBuf[i];
@@ -162,11 +217,11 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 			d_buf += NUM_BUF;
 		}
 		
-		CUDA_CHECK( cudaMalloc((void **)&RayDat0_dev, nRays0*sizeR) ); 
-		CUDA_CHECK( cudaMemcpy(	RayDat0_dev,
-								RayDat,
-								nRays0*sizeR,
-								cudaMemcpyHostToDevice) );
+		if(nRays0 > 0)
+		{
+			ensure_device_rays(RayDat0_dev, workspace->active_capacity, nRays0);
+			CUDA_CHECK( cudaMemcpy(RayDat0_dev, RayDat, nRays0*sizeR, cudaMemcpyHostToDevice) );
+		}
 		
 		/*int m = 0;
 		for(int j=0; j<3; j++)
@@ -204,7 +259,8 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		nRays0 = partNumAdd*nPix;
 		nRays = nRays0;
 	
-		RayDat = new Ray[nRays];
+		ensure_host_rays(workspace, nRays);
+		RayDat = workspace->host;
 		
 		// After initializing a set of rays, we advance along the particle array
 		//printf("A %d\t%d\t%d\t%d\n", domain.get_id(), PartInfo[1], PartInfo[2], partNumAdd);
@@ -225,6 +281,7 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 				for(int j=0; j<nPix; j++)
 				{
 					//int index = i*nPix + j;
+						RayDat[index].R = 0.0f;
 					RayDat[index].set_dom(domain.get_id());
 					RayDat[index].set_part(PartInfo[2]);
 					RayDat[index].set_pix(j, ord);
@@ -256,6 +313,7 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 				for(int j=0; j<jetOnNum; j++)
 				{
 					int pix = jetOnPix*jetOnNum + j;
+						RayDat[index].R = 0.0f;
 					RayDat[index].set_dom(domain.get_id());
 					RayDat[index].set_part(PartInfo[2]);
 					RayDat[index].set_pix(pix, ord);
@@ -291,19 +349,15 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		
 		//printf("B %d\t%d\t%d\n", PartInfo[1], PartInfo[2], partNumAdd);
 		
-		CUDA_CHECK( cudaMalloc((void **)&RayDat0_dev, nRays0*sizeR) ); 
-		CUDA_CHECK( cudaMemcpy(	RayDat0_dev,
-								RayDat,
-								nRays0*sizeR,
-								cudaMemcpyHostToDevice) );
+		if(nRays0 > 0)
+		{
+			ensure_device_rays(RayDat0_dev, workspace->active_capacity, nRays0);
+			CUDA_CHECK( cudaMemcpy(RayDat0_dev, RayDat, nRays0*sizeR, cudaMemcpyHostToDevice) );
+		}
 	}
 	
-	delete[] RayDat;
-	RayDat = 0;
-	
 	// Number of active rays:
-	int *nRays_dev;
-	CUDA_CHECK( cudaMalloc((void **)&nRays_dev, sizeof(int)) );
+	int *nRays_dev = workspace->ray_count;
 	// Amount of used memory
 	double cuda_db_max[2] = {0.0, 0.0};
 
@@ -359,7 +413,13 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 
 		// Create the new RayDat array
 		//printf("Node %d nRays0 = %d nRays = %d\n", domain.get_id(), nRays0, nRays);
-		CUDA_CHECK( cudaMalloc((void **)&RayDat_dev, 4*nRays*sizeR) );
+		if(nRays > INT_MAX / 4)
+		{
+			fprintf(stderr, "Ray count exceeds the split index limit: %d\n", nRays);
+			abort();
+		}
+		ensure_device_rays(RayDat_dev, workspace->next_capacity,
+								std::max(1, 4*nRays));
 		
 		int temp_nrays = nRays;
 
@@ -407,12 +467,9 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 			}
 		}
 
-		// Free old array
-		CUDA_CHECK( cudaFree(RayDat0_dev) );
-
-		// Handle pointer referencing
-		RayDat0_dev = RayDat_dev;
-		RayDat_dev = 0;
+		// Keep both allocations and exchange their roles for the next generation.
+		std::swap(RayDat0_dev, RayDat_dev);
+		std::swap(workspace->active_capacity, workspace->next_capacity);
 		
 		// Reset counter
 		nRays0 = nRays;
@@ -430,11 +487,7 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 		//printf("%d\t%d\t%d\t%d\n", domain.get_id(), PartInfo[0], PartInfo[1], PartInfo[2]);
 	}
 	
-	// Free unecessary array(s)
 	CUDA_CHECK( cudaDeviceSynchronize() );
-	CUDA_CHECK( cudaFree(nRays_dev) );
-	CUDA_CHECK( cudaFree(RayDat0_dev) );
-//	CUDA_CHECK( cudaFree(RayDat_dev) );	//CHECKXXX
 	
 	CUDA_CHECK( cudaEventRecord( timeC, 0 ) );
 	
@@ -445,19 +498,26 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	
 	CUDA_CHECK( cudaMemcpy(	ndBuf, NumBuf_dev,
 							8*sizeof(int), cudaMemcpyDeviceToHost) );
-	CUDA_CHECK( cudaMemcpy( RayBuf, RayBuf_dev,
-							8*NUM_BUF*sizeR, cudaMemcpyDeviceToHost) );
+	// Each domain segment contains only ndBuf[i] valid rays. Avoid copying
+	// the unused portion of the large fixed-size exchange buffer.
+	for(int i=0; i<8; i++)
+	{
+		if(ndBuf[i] < 0 || ndBuf[i] > NUM_BUF)
+		{
+			fprintf(stderr, "Ray buffer overflow in domain %d: %d > %d\n",
+					i, ndBuf[i], NUM_BUF);
+			abort();
+		}
+		if(ndBuf[i] > 0)
+			CUDA_CHECK( cudaMemcpy(RayBuf + i*NUM_BUF, RayBuf_dev + i*NUM_BUF,
+								ndBuf[i]*sizeR, cudaMemcpyDeviceToHost) );
+	}
 		
 	// Unified Memory
 	/*memcpy(FluxArray, FluxArray_dev, size0*SPECIES);
 	memcpy(dEArray, dEArray_dev, size0);*/
 	
 	CUDA_CHECK( cudaMemcpy(nfSback, nfSback_dev, size3, cudaMemcpyDeviceToHost) );
-	
-	CUDA_CHECK( cudaFree(NumBuf_dev) );
-	CUDA_CHECK( cudaFree(RayBuf_dev) );
-	
-	CUDA_CHECK( cudaFree(nfSback_dev) );
 	
 	CUDA_CHECK( cudaDeviceSynchronize() );
 	CUDA_CHECK( cudaEventRecord( timeD, 0 ) );
@@ -475,7 +535,9 @@ void rad(	float* DensArray_dev, float* x_NArray_dev, const source* source_dev,
 	CUDA_CHECK( cudaEventDestroy(timeC) );
 	CUDA_CHECK( cudaEventDestroy(timeD) );
 	
-	//printf("Ray Trace (node %d):\t%f\t%f\t%f\n", domain.get_id(), time0/1000, time1/1000, time2/1000);
+	if(getenv("ARC_RAY_PROFILE"))
+		printf("ARC_RAY_PROFILE domain=%d setup_ms=%f trace_ms=%f copy_ms=%f\n",
+				domain.get_id(), time0, time1, time2);
 	
 	local_vars[0] = cuda_db_max[0];
 	local_vars[1] = cuda_db_max[1];

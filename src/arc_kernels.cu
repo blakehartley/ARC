@@ -1338,7 +1338,8 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 				int nBufID = atomicAdd((nBufLoc + splitDom), 1);
 				int pix, ord;
 				ray_split->get_pix(&pix,&ord);
-				RayBuf[splitDom*NUM_BUF + nBufID].copy_ray(*ray_split);
+					if(nBufID < NUM_BUF)
+						RayBuf[splitDom*NUM_BUF + nBufID].copy_ray(*ray_split);
 				int Nside2 = 1 << (2*ord);
 				if(pix < 0 || pix > 12*Nside2)
 					printf("SPLIT ADJUST Domain %d threadID %d N0 %d\n", domain.get_id(), threadID, N0);
@@ -1378,7 +1379,8 @@ __global__ void raySplitKernel(	Ray *RayDat_init, Ray *RayDat, int *nRays, int N
 				if(pix < 0 || pix > 12*Nside2)
 					printf("NORMAL BUFFER Domain %d threadID %d N0 %d\n", domain.get_id(), threadID, N0);
 				
-				RayBuf[dom*NUM_BUF + nBufID].copy_ray(*ray);
+					if(nBufID < NUM_BUF)
+						RayBuf[dom*NUM_BUF + nBufID].copy_ray(*ray);
 				//ray->R = temp;
 			}
 			
